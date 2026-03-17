@@ -334,14 +334,14 @@ export default function Reportes() {
                   <div>
                     <p className="text-xs text-slate-500">Fichó entrada</p>
                     <p className="text-xs text-white font-medium">
-                      {new Date(t.inicio).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}
+                      {new Date(t.inicio).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit', timeZone: 'America/Argentina/Buenos_Aires' })}
                     </p>
                   </div>
                   <div>
                     <p className="text-xs text-slate-500">Fichó salida</p>
                     <p className="text-xs text-white font-medium">
                       {t.cierre
-                        ? new Date(t.cierre).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })
+                        ? new Date(t.cierre).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit', timeZone: 'America/Argentina/Buenos_Aires' })
                         : <span className="text-amber-400">Turno activo</span>
                       }
                     </p>
@@ -467,7 +467,7 @@ export default function Reportes() {
                   <p className="text-slate-400 text-xs mt-0.5">{a.detalle}</p>
                 </div>
                 <span className="text-xs text-slate-600 shrink-0 whitespace-nowrap">
-                  {new Date(a.fecha).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}
+                  {new Date(a.fecha).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit', timeZone: 'America/Argentina/Buenos_Aires' })}
                 </span>
               </div>
             ))}
