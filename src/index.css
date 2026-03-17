@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: #0f172a;
+  color: #f1f5f9;
+  font-family: 'DM Sans', system-ui, sans-serif;
+}
+
+/* Scrollbar personalizado */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+/* Animaciones */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.6; }
+}
+
+.animate-fade-in  { animation: fadeIn  0.2s ease-out; }
+.animate-slide-in { animation: slideIn 0.15s ease-out; }
+.animate-pulse-soft { animation: pulse-soft 2s ease-in-out infinite; }
+
+/* ── Inputs visibles ── */
+input[type="text"],
+input[type="password"],
+input[type="number"],
+input[type="email"],
+input[type="date"],
+input,
+select,
+textarea {
+  background-color: #1e293b !important;
+  color: #f1f5f9 !important;
+  border: 1px solid #475569 !important;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+  width: 100%;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #64748b !important;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: #6366f1 !important;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+}
+
+select option {
+  background-color: #1e293b;
+  color: #f1f5f9;
+}
+
+/* Offline banner */
+.offline-banner {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  background: #b45309;
+  color: #fef3c7;
+  text-align: center;
+  padding: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  z-index: 9999;
+}
