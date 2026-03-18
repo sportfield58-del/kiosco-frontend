@@ -44,6 +44,8 @@ export default function Reportes() {
   const [motivoStock, setMotivoStock]   = useState('')
   const [toastMsg, setToastMsg]         = useState(null)
 
+  useEffect(() => { cargarSolicitudes() }, [])
+
   useEffect(() => {
     if (tab === TAB.HOY)       { cargarHoy(); cargarSolicitudes() }
     if (tab === TAB.SEMANA)    cargarSemana()
