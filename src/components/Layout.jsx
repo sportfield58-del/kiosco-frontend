@@ -66,10 +66,11 @@ export default function Layout() {
             <ShoppingCartIcon className="w-4 h-4 shrink-0" /> Caja
           </NavLink>
 
+          <NavLink to="/stock" className={navDesktop}>
+            <CubeIcon className="w-4 h-4 shrink-0" /> Stock
+          </NavLink>
+
           {esDueno && <>
-            <NavLink to="/stock" className={navDesktop}>
-              <CubeIcon className="w-4 h-4 shrink-0" /> Stock
-            </NavLink>
             <NavLink to="/reportes" className={navDesktop}>
               <ChartBarIcon className="w-4 h-4 shrink-0" /> Reportes
             </NavLink>
@@ -121,11 +122,12 @@ export default function Layout() {
             <span>Caja</span>
           </NavLink>
 
+          <NavLink to="/stock" className={navMobile}>
+            <CubeIcon className="w-6 h-6" />
+            <span>Stock</span>
+          </NavLink>
+
           {esDueno && <>
-            <NavLink to="/stock" className={navMobile}>
-              <CubeIcon className="w-6 h-6" />
-              <span>Stock</span>
-            </NavLink>
             <NavLink to="/reportes" className={navMobile}>
               <ChartBarIcon className="w-6 h-6" />
               <span>Reportes</span>

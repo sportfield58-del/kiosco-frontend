@@ -28,9 +28,7 @@ export default function App() {
           <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
             <Route index element={<Navigate to="/caja" replace />} />
             <Route path="caja" element={<Caja />} />
-            <Route path="stock" element={
-              <PrivateRoute roles={['admin','dueño']}><Stock /></PrivateRoute>
-            } />
+            <Route path="stock" element={<Stock />} />
             <Route path="reportes" element={
               <PrivateRoute roles={['admin','dueño']}><Reportes /></PrivateRoute>
             } />
