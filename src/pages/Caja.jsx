@@ -19,6 +19,9 @@ export default function Caja() {
   const [turno, setTurno] = useState(null)
   const [carrito, setCarrito]     = useState([])
   const [codigo, setCodigo]       = useState('')
+  const [productosStock, setProductosStock] = useState([])
+  const [sugerencias, setSugerencias] = useState([])
+  const [mostrarSugerencias, setMostrarSugerencias] = useState(false)
   const [medio, setMedio]         = useState('efectivo')
   const [montoRecibido, setMontoRecibido] = useState('')
   const [ventasTurno, setVentas]  = useState([])
@@ -29,23 +32,22 @@ export default function Caja() {
   const [modalCierre, setModalCierre] = useState(false)
   const [montoCierre, setMontoCierre] = useState('')
   const [resumenCierre, setResumenCierre] = useState(null)
-  const [botonesRapidos, setBotonesRapidos] = useState([])
   const inputRef = useRef()
 
-  useEffect(() => { cargarTurno(); cargarBotones() }, [])
+  useEffect(() => { cargarTurno(); cargarProductos() }, [])
+
+  const cargarProductos = async () => {
+    try {
+      const res = await api.get('/productos')
+      setProductosStock(res.data)
+    } catch {}
+  }
 
   const cargarTurno = async () => {
     try {
       const res = await api.get(`/turnos/activo/${user.id}`)
       setTurno(res.data.turno)
       if (res.data.turno) cargarVentas(res.data.turno.id)
-    } catch {}
-  }
-
-  const cargarBotones = async () => {
-    try {
-      const res = await api.get('/botones')
-      setBotonesRapidos(res.data.filter(b => b.activo))
     } catch {}
   }
 
@@ -68,31 +70,65 @@ export default function Caja() {
     }
   }
 
+  const buscarSugerencias = (texto) => {
+    if (!texto.trim() || texto.length < 2) {
+      setSugerencias([])
+      setMostrarSugerencias(false)
+      return
+    }
+    const filtrados = productosStock.filter(p =>
+      p.nombre.toLowerCase().includes(texto.toLowerCase())
+    ).slice(0, 6)
+    setSugerencias(filtrados)
+    setMostrarSugerencias(filtrados.length > 0)
+  }
+
+  const agregarProducto = (p) => {
+    setCarrito(prev => {
+      const existe = prev.find(i => i.producto_id === p.id)
+      if (existe) return prev.map(i =>
+        i.producto_id === p.id
+          ? { ...i, cantidad: i.cantidad + 1, subtotal: (i.cantidad + 1) * i.precio_unitario }
+          : i
+      )
+      return [...prev, {
+        producto_id: p.id, nombre: p.nombre,
+        precio_unitario: p.precio_venta, cantidad: 1, subtotal: p.precio_venta
+      }]
+    })
+    setCodigo('')
+    setSugerencias([])
+    setMostrarSugerencias(false)
+    inputRef.current?.focus()
+  }
+
   const escanear = useCallback(async (e) => {
     e.preventDefault()
     const cod = codigo.trim()
     if (!cod) return
+    setSugerencias([])
+    setMostrarSugerencias(false)
     setCodigo('')
     try {
       const res = await api.get(`/productos/buscar?codigo=${cod}`)
-      const p = res.data
-      setCarrito(prev => {
-        const existe = prev.find(i => i.producto_id === p.id)
-        if (existe) return prev.map(i =>
-          i.producto_id === p.id
-            ? { ...i, cantidad: i.cantidad + 1, subtotal: (i.cantidad + 1) * i.precio_unitario }
-            : i
-        )
-        return [...prev, {
-          producto_id: p.id, nombre: p.nombre,
-          precio_unitario: p.precio_venta, cantidad: 1, subtotal: p.precio_venta
-        }]
-      })
+      agregarProducto(res.data)
     } catch {
-      mostrarToast('Producto no encontrado', 'error')
+      // Si no encuentra por código, buscar por nombre
+      const filtrados = productosStock.filter(p =>
+        p.nombre.toLowerCase().includes(cod.toLowerCase())
+      )
+      if (filtrados.length === 1) {
+        agregarProducto(filtrados[0])
+      } else if (filtrados.length > 1) {
+        setSugerencias(filtrados.slice(0, 6))
+        setMostrarSugerencias(true)
+        setCodigo(cod)
+      } else {
+        mostrarToast('Producto no encontrado', 'error')
+      }
     }
     inputRef.current?.focus()
-  }, [codigo])
+  }, [codigo, productosStock])
 
   const agregarBotonRapido = (boton) => {
     setCarrito(prev => {
@@ -304,14 +340,41 @@ export default function Caja() {
           </button>
         </div>
 
-        <form onSubmit={escanear} className="flex gap-2">
-          <input ref={inputRef} value={codigo} onChange={e => setCodigo(e.target.value)}
-            className="flex-1" placeholder="Escaneá o escribí el código de barra..." autoFocus />
-          <button type="submit"
-            className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-all">
-            +
-          </button>
-        </form>
+        <div className="relative">
+          <form onSubmit={escanear} className="flex gap-2">
+            <input
+              ref={inputRef}
+              value={codigo}
+              onChange={e => { setCodigo(e.target.value); buscarSugerencias(e.target.value) }}
+              onBlur={() => setTimeout(() => setMostrarSugerencias(false), 150)}
+              onFocus={() => codigo.length >= 2 && buscarSugerencias(codigo)}
+              className="flex-1"
+              placeholder="Escaneá código o buscá por nombre..."
+              autoFocus
+            />
+            <button type="submit"
+              className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-all">
+              +
+            </button>
+          </form>
+          {mostrarSugerencias && sugerencias.length > 0 && (
+            <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-slate-800 border border-slate-600 rounded-xl overflow-hidden shadow-2xl">
+              {sugerencias.map(p => (
+                <button
+                  key={p.id}
+                  onMouseDown={() => agregarProducto(p)}
+                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-700 transition-colors text-left border-b border-slate-700/50 last:border-0"
+                >
+                  <div>
+                    <p className="text-white text-sm font-medium">{p.nombre}</p>
+                    <p className="text-slate-500 text-xs">Stock: {p.stock} unidades</p>
+                  </div>
+                  <span className="text-indigo-400 font-semibold text-sm">${p.precio_venta.toFixed(2)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
         <div className="flex-1 overflow-auto space-y-1.5">
           {carrito.length === 0 ? (
