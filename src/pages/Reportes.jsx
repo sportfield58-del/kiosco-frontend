@@ -10,7 +10,7 @@ import {
   ExclamationTriangleIcon, PlusIcon, CheckIcon
 } from '@heroicons/react/24/outline'
 
-const TAB = { HOY: 'hoy', SEMANA: 'semana', EMPLEADOS: 'empleados', STOCK: 'stock', ALERTAS: 'alertas', BOTONES: 'botones' }
+const TAB = { HOY: 'hoy', SEMANA: 'semana', EMPLEADOS: 'empleados', STOCK: 'stock', ALERTAS: 'alertas' }
 
 const TOOLTIP = {
   contentStyle: { background: '#1e293b', border: '1px solid #334155', borderRadius: 8, fontSize: 12 },
@@ -34,9 +34,6 @@ export default function Reportes() {
   const [stockBajo, setStockBajo]       = useState([])
 
   const [solicitudes, setSolicitudes] = useState([])
-  const [botones, setBotones] = useState([])
-  const [modalBoton, setModalBoton] = useState(null)
-  const [formBoton, setFormBoton] = useState({ nombre: '', emoji: '', precio: '' })
 
   // modal ajuste stock
   const [modalStock, setModalStock]     = useState(null)
@@ -52,16 +49,10 @@ export default function Reportes() {
     if (tab === TAB.EMPLEADOS) cargarTurnos()
     if (tab === TAB.STOCK)     cargarStock()
     if (tab === TAB.ALERTAS)   cargarAlertas()
-    if (tab === TAB.BOTONES)   cargarBotones()
   }, [tab, fecha])
 
   const cargarSolicitudes = async () => {
     try { const r = await api.get('/solicitudes/stock/pendientes'); setSolicitudes(r.data) }
-    catch {}
-  }
-
-  const cargarBotones = async () => {
-    try { const r = await api.get('/botones'); setBotones(r.data) }
     catch {}
   }
 
@@ -94,8 +85,14 @@ export default function Reportes() {
 
   const cargarAlertas = async () => {
     setLoading(true)
-    try { const r = await api.get('/reportes/alertas'); setAlertas(r.data) }
-    catch {} finally { setLoading(false) }
+    try {
+      const r = await api.get('/reportes/alertas')
+      setAlertas(r.data)
+    } catch (e) {
+      console.error('Error alertas:', e)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const ajustarStock = async () => {
@@ -149,7 +146,6 @@ export default function Reportes() {
             { id: TAB.EMPLEADOS, label: 'Empleados',   Icon: UsersIcon },
             { id: TAB.STOCK,     label: 'Stock',       Icon: CubeIcon },
             { id: TAB.ALERTAS,   label: 'Alertas',     Icon: BellAlertIcon },
-          { id: TAB.BOTONES,   label: 'Botones rápidos', Icon: PlusIcon },
           ].map(({ id, label, Icon }) => (
             <button key={id} onClick={() => setTab(id)}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
