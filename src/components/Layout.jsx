@@ -1,9 +1,11 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useOffline } from '../hooks/useOffline'
+import api from '../api'
 import {
   ShoppingCartIcon, CubeIcon, ChartBarIcon,
-  UsersIcon, ArrowRightOnRectangleIcon, SignalSlashIcon
+  UsersIcon, ArrowRightOnRectangleIcon, SignalSlashIcon, BellAlertIcon
 } from '@heroicons/react/24/outline'
 
 export default function Layout() {
@@ -14,6 +16,34 @@ export default function Layout() {
   const handleLogout = () => { logout(); navigate('/login') }
 
   const esDueno = ['admin','dueño'].includes(user?.rol)
+  const [alertasNuevas, setAlertasNuevas] = useState(0)
+
+  useEffect(() => {
+    if (!esDueno) return
+    const lastSeen = parseInt(localStorage.getItem('lastAlertId') || '0')
+    const check = async () => {
+      try {
+        const r = await api.get('/reportes/alertas')
+        if (r.data.length > 0) {
+          const maxId = r.data[0].id
+          const nuevas = r.data.filter(a => a.id > lastSeen).length
+          setAlertasNuevas(nuevas)
+        }
+      } catch {}
+    }
+    check()
+    const interval = setInterval(check, 30000)
+    return () => clearInterval(interval)
+  }, [esDueno])
+
+  const marcarAlertasVistas = () => {
+    api.get('/reportes/alertas').then(r => {
+      if (r.data.length > 0) {
+        localStorage.setItem('lastAlertId', r.data[0].id)
+        setAlertasNuevas(0)
+      }
+    }).catch(() => {})
+  }
 
   const navDesktop = ({ isActive }) =>
     `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${
@@ -71,8 +101,14 @@ export default function Layout() {
           </NavLink>
 
           {esDueno && <>
-            <NavLink to="/reportes" className={navDesktop}>
-              <ChartBarIcon className="w-4 h-4 shrink-0" /> Reportes
+            <NavLink to="/reportes" className={navDesktop} onClick={marcarAlertasVistas}>
+              <ChartBarIcon className="w-4 h-4 shrink-0" />
+              <span className="flex-1">Reportes</span>
+              {alertasNuevas > 0 && (
+                <span className="bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center shrink-0">
+                  {alertasNuevas > 9 ? '9+' : alertasNuevas}
+                </span>
+              )}
             </NavLink>
             <NavLink to="/usuarios" className={navDesktop}>
               <UsersIcon className="w-4 h-4 shrink-0" /> Usuarios
@@ -128,8 +164,15 @@ export default function Layout() {
           </NavLink>
 
           {esDueno && <>
-            <NavLink to="/reportes" className={navMobile}>
-              <ChartBarIcon className="w-6 h-6" />
+            <NavLink to="/reportes" className={navMobile} onClick={marcarAlertasVistas}>
+              <div className="relative">
+                <ChartBarIcon className="w-6 h-6" />
+                {alertasNuevas > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                    {alertasNuevas > 9 ? '9+' : alertasNuevas}
+                  </span>
+                )}
+              </div>
               <span>Reportes</span>
             </NavLink>
             <NavLink to="/usuarios" className={navMobile}>
