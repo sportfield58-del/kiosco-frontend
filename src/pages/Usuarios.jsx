@@ -63,6 +63,19 @@ export default function Usuarios() {
     setModal(true)
   }
 
+  const toggleStock = async (u) => {
+    try {
+      await api.put(`/usuarios/${u.id}`, { stock_habilitado: !u.stock_habilitado })
+      mostrarToast(
+        u.stock_habilitado ? `Stock desactivado para ${u.nombre}` : `Stock activado para ${u.nombre}`,
+        'ok'
+      )
+      cargar()
+    } catch (e) {
+      mostrarToast(e.response?.data?.detail || 'Error', 'error')
+    }
+  }
+
   const cerrar = () => { setModal(false); setEditando(null) }
 
   const mostrarToast = (texto, tipo) => {
@@ -119,7 +132,22 @@ export default function Usuarios() {
                 </span>
               </div>
 
-              <div className="flex gap-2 mt-4">
+              {u.rol === 'vendedor' && (
+                <div className={`flex items-center justify-between mt-3 px-2 py-1.5 rounded-lg text-xs ${u.stock_habilitado ? 'bg-green-900/20 border border-green-800/30' : 'bg-slate-700/30'}`}>
+                  <span className={u.stock_habilitado ? 'text-green-400 font-medium' : 'text-slate-500'}>
+                    {u.stock_habilitado ? '🔓 Stock activo' : '🔒 Stock bloqueado'}
+                  </span>
+                  <button onClick={() => toggleStock(u)}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                      u.stock_habilitado
+                        ? 'bg-red-900/40 hover:bg-red-900/60 text-red-400'
+                        : 'bg-green-900/40 hover:bg-green-900/60 text-green-400'
+                    }`}>
+                    {u.stock_habilitado ? 'Desactivar' : 'Activar'}
+                  </button>
+                </div>
+              )}
+              <div className="flex gap-2 mt-3">
                 <button onClick={() => abrirEditar(u)}
                   className="flex-1 flex items-center justify-center gap-1.5 border border-slate-600 hover:border-slate-500 text-slate-300 hover:text-white py-1.5 rounded-lg text-xs transition-all">
                   <PencilIcon className="w-3.5 h-3.5" /> Editar
