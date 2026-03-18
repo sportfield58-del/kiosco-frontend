@@ -44,6 +44,13 @@ export default function Reportes() {
   useEffect(() => { cargarSolicitudes() }, [])
 
   useEffect(() => {
+    if (tab !== TAB.ALERTAS) return
+    cargarAlertas()
+    const interval = setInterval(cargarAlertas, 30000)
+    return () => clearInterval(interval)
+  }, [tab])
+
+  useEffect(() => {
     if (tab === TAB.HOY)       { cargarHoy(); cargarSolicitudes() }
     if (tab === TAB.SEMANA)    cargarSemana()
     if (tab === TAB.EMPLEADOS) cargarTurnos()
@@ -457,6 +464,13 @@ export default function Reportes() {
         {/* ── ALERTAS ── */}
         {tab === TAB.ALERTAS && (
           <div className="space-y-1.5">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-slate-500 text-xs">{alertas.length} movimientos registrados</p>
+              <button onClick={cargarAlertas}
+                className="text-xs text-indigo-400 hover:text-indigo-300 border border-indigo-800/40 px-3 py-1 rounded-lg transition-all">
+                ↻ Actualizar
+              </button>
+            </div>
             {alertas.length === 0 && !loading && (
               <div className="text-center text-slate-600 py-16 text-sm">Sin alertas registradas</div>
             )}
