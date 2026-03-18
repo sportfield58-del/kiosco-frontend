@@ -26,32 +26,24 @@ export default function Reportes() {
   const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0])
   const [loading, setLoading] = useState(false)
 
-  const [reporteHoy, setReporteHoy]     = useState(null)
-  const [semana, setSemana]             = useState([])
-  const [turnos, setTurnos]             = useState([])
-  const [productos, setProductos]       = useState([])
-  const [alertas, setAlertas]           = useState([])
-  const [stockBajo, setStockBajo]       = useState([])
-
+  const [reporteHoy, setReporteHoy] = useState(null)
+  const [semana, setSemana]         = useState([])
+  const [turnos, setTurnos]         = useState([])
+  const [productos, setProductos]   = useState([])
+  const [alertas, setAlertas]       = useState([])
+  const [stockBajo, setStockBajo]   = useState([])
   const [solicitudes, setSolicitudes] = useState([])
-
-  // modal ajuste stock
-  const [modalStock, setModalStock]     = useState(null)
-  const [nuevoStock, setNuevoStock]     = useState('')
-  const [motivoStock, setMotivoStock]   = useState('')
-  const [toastMsg, setToastMsg]         = useState(null)
-
-  useEffect(() => { cargarSolicitudes() }, [])
+  const [modalStock, setModalStock] = useState(null)
+  const [nuevoStock, setNuevoStock] = useState('')
+  const [motivoStock, setMotivoStock] = useState('')
+  const [toastMsg, setToastMsg]     = useState(null)
 
   useEffect(() => {
-    if (tab !== TAB.ALERTAS) return
-    cargarAlertas()
-    const interval = setInterval(cargarAlertas, 30000)
-    return () => clearInterval(interval)
-  }, [tab])
+    cargarSolicitudes()
+  }, [])
 
   useEffect(() => {
-    if (tab === TAB.HOY)       { cargarHoy(); cargarSolicitudes() }
+    if (tab === TAB.HOY)       cargarHoy()
     if (tab === TAB.SEMANA)    cargarSemana()
     if (tab === TAB.EMPLEADOS) cargarTurnos()
     if (tab === TAB.STOCK)     cargarStock()
@@ -59,14 +51,20 @@ export default function Reportes() {
   }, [tab, fecha])
 
   const cargarSolicitudes = async () => {
-    try { const r = await api.get('/solicitudes/stock/pendientes'); setSolicitudes(r.data) }
-    catch {}
+    try {
+      const r = await api.get('/solicitudes/stock/pendientes')
+      setSolicitudes(r.data)
+    } catch {}
   }
 
   const cargarHoy = async () => {
     setLoading(true)
-    try { const r = await api.get(`/reportes/dia?fecha=${fecha}`); setReporteHoy(r.data) }
-    catch {} finally { setLoading(false) }
+    try {
+      const r = await api.get(`/reportes/dia?fecha=${fecha}`)
+      setReporteHoy(r.data)
+      cargarSolicitudes()
+    } catch {}
+    finally { setLoading(false) }
   }
 
   const cargarSemana = async () => {
@@ -95,11 +93,8 @@ export default function Reportes() {
     try {
       const r = await api.get('/reportes/alertas')
       setAlertas(r.data)
-    } catch (e) {
-      console.error('Error alertas:', e)
-    } finally {
-      setLoading(false)
-    }
+    } catch {}
+    finally { setLoading(false) }
   }
 
   const ajustarStock = async () => {
@@ -110,7 +105,7 @@ export default function Reportes() {
         motivo: motivoStock || 'ajuste manual desde panel dueño',
         usuario_id: 1
       })
-      toast(`Stock de "${modalStock.nombre}" actualizado a ${nuevoStock}`, 'ok')
+      toast('Stock actualizado', 'ok')
       setModalStock(null); setNuevoStock(''); setMotivoStock('')
       cargarStock()
     } catch (e) {
@@ -123,7 +118,6 @@ export default function Reportes() {
     setTimeout(() => setToastMsg(null), 3000)
   }
 
-  // Proyección mensual basada en semana
   const proySemana = semana.reduce((s, d) => s + d.total, 0)
   const proyGanancia = semana.reduce((s, d) => s + d.ganancia, 0)
   const proyMes = (proySemana / 7) * 30
@@ -143,7 +137,6 @@ export default function Reportes() {
         }`}>{toastMsg.texto}</div>
       )}
 
-      {/* Header */}
       <div className="px-5 pt-5 pb-3 border-b border-slate-700/50">
         <h1 className="text-xl font-bold text-white mb-3">Panel del dueño</h1>
         <div className="flex gap-1 bg-slate-800/50 rounded-xl p-1 w-fit overflow-x-auto">
@@ -167,17 +160,44 @@ export default function Reportes() {
       <div className="flex-1 overflow-auto p-5">
         {loading && <div className="text-slate-500 text-sm animate-pulse-soft mb-4">Cargando...</div>}
 
-        {/* ── HOY ── */}
+        {/* HOY */}
         {tab === TAB.HOY && (
           <div className="space-y-4">
             <div className="flex items-center gap-3">
               <input type="date" value={fecha} onChange={e => setFecha(e.target.value)}
                 className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white w-auto" />
-              <span className="text-slate-500 text-sm">Mostrando resultados del día</span>
             </div>
 
+            {solicitudes.length > 0 && (
+              <div className="bg-amber-950/40 border border-amber-700/40 rounded-xl p-4 space-y-2">
+                <p className="text-amber-400 text-sm font-semibold">🔔 Solicitudes de acceso al stock ({solicitudes.length})</p>
+                {solicitudes.map(s => (
+                  <div key={s.id} className="flex items-center justify-between bg-slate-800/50 rounded-lg px-3 py-2">
+                    <div>
+                      <p className="text-white text-sm font-medium">{s.usuario}</p>
+                      <p className="text-slate-500 text-xs">solicita acceso al stock</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={async () => {
+                        await api.post(`/solicitudes/stock/${s.id}/aprobar`, { aprobado_por: 1 })
+                        cargarSolicitudes()
+                        toast('Acceso aprobado', 'ok')
+                      }} className="bg-green-700 hover:bg-green-600 text-white text-xs px-3 py-1.5 rounded-lg transition-all font-medium">
+                        Aprobar
+                      </button>
+                      <button onClick={async () => {
+                        await api.post(`/solicitudes/stock/${s.id}/rechazar`, {})
+                        cargarSolicitudes()
+                      }} className="bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs px-3 py-1.5 rounded-lg transition-all">
+                        Rechazar
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {reporteHoy && <>
-              {/* KPIs principales */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 <KPI label="Total vendido"  value={`$${reporteHoy.total_vendido.toFixed(2)}`}  color="indigo" Icon={BanknotesIcon} />
                 <KPI label="Ganancia neta"  value={`$${reporteHoy.ganancia_neta.toFixed(2)}`}  color="green"  Icon={ArrowTrendingUpIcon} />
@@ -186,7 +206,6 @@ export default function Reportes() {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                {/* Pie medio de pago */}
                 <div className="bg-slate-800/50 border border-slate-700/40 rounded-xl p-4">
                   <h3 className="text-sm font-semibold text-slate-300 mb-3">Por medio de pago</h3>
                   {pieData.length > 0 ? (
@@ -216,7 +235,6 @@ export default function Reportes() {
                   ) : <p className="text-slate-600 text-xs text-center py-8">Sin ventas este día</p>}
                 </div>
 
-                {/* Por empleado */}
                 <div className="bg-slate-800/50 border border-slate-700/40 rounded-xl p-4">
                   <h3 className="text-sm font-semibold text-slate-300 mb-3">Por empleado</h3>
                   {Object.keys(reporteHoy.por_usuario || {}).length > 0 ? (
@@ -240,7 +258,6 @@ export default function Reportes() {
                   ) : <p className="text-slate-600 text-xs text-center py-8">Sin ventas este día</p>}
                 </div>
 
-                {/* Top productos */}
                 <div className="bg-slate-800/50 border border-slate-700/40 rounded-xl p-4">
                   <h3 className="text-sm font-semibold text-slate-300 mb-3">Top productos</h3>
                   {reporteHoy.top_productos?.length > 0 ? (
@@ -260,17 +277,15 @@ export default function Reportes() {
                 </div>
               </div>
             </>}
-
             {!loading && !reporteHoy && (
               <div className="text-center text-slate-600 py-16 text-sm">Sin datos para esta fecha</div>
             )}
           </div>
         )}
 
-        {/* ── SEMANA ── */}
+        {/* SEMANA */}
         {tab === TAB.SEMANA && (
           <div className="space-y-4">
-            {/* Proyección mensual */}
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-gradient-to-br from-indigo-900/40 to-indigo-800/20 border border-indigo-700/30 rounded-2xl p-5">
                 <p className="text-xs text-indigo-400 font-medium mb-1">Proyección ventas del mes</p>
@@ -283,8 +298,6 @@ export default function Reportes() {
                 <p className="text-xs text-slate-500 mt-1">Ganancia neta estimada</p>
               </div>
             </div>
-
-            {/* Cards por día */}
             <div className="grid grid-cols-7 gap-2">
               {semana.map(d => (
                 <div key={d.fecha} className="bg-slate-800/50 border border-slate-700/40 rounded-xl p-3 text-center">
@@ -292,39 +305,28 @@ export default function Reportes() {
                   <p className="text-xs text-slate-600 mb-1">{d.fecha.slice(5)}</p>
                   <p className="text-sm font-bold text-white">${d.total.toFixed(0)}</p>
                   <p className="text-xs text-green-400">+${d.ganancia.toFixed(0)}</p>
-                  <p className="text-xs text-slate-600">{d.cantidad} v.</p>
                 </div>
               ))}
             </div>
-
-            {/* Gráfico ventas vs ganancia */}
             {semana.length > 0 && (
               <div className="bg-slate-800/50 border border-slate-700/40 rounded-xl p-4">
-                <h3 className="text-sm font-semibold text-slate-300 mb-4">Ventas vs Ganancia — últimos 7 días</h3>
+                <h3 className="text-sm font-semibold text-slate-300 mb-4">Ventas vs Ganancia</h3>
                 <ResponsiveContainer width="100%" height={220}>
                   <BarChart data={semana} margin={{ left: -10 }}>
                     <CartesianGrid stroke="#1e293b" vertical={false} />
                     <XAxis dataKey="fecha" tick={{ fill: '#64748b', fontSize: 11 }} tickFormatter={f => f.slice(5)} />
                     <YAxis tick={{ fill: '#64748b', fontSize: 11 }} />
                     <Tooltip {...TOOLTIP} formatter={(v, n) => [`$${v.toFixed(2)}`, n === 'total' ? 'Ventas' : 'Ganancia']} />
-                    <Bar dataKey="total"    fill="#6366f1" radius={[4,4,0,0]} name="total" />
-                    <Bar dataKey="ganancia" fill="#22c55e" radius={[4,4,0,0]} name="ganancia" />
+                    <Bar dataKey="total"    fill="#6366f1" radius={[4,4,0,0]} />
+                    <Bar dataKey="ganancia" fill="#22c55e" radius={[4,4,0,0]} />
                   </BarChart>
                 </ResponsiveContainer>
-                <div className="flex gap-4 mt-2 justify-center">
-                  <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-indigo-500" /><span className="text-xs text-slate-400">Ventas</span></div>
-                  <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-green-500" /><span className="text-xs text-slate-400">Ganancia</span></div>
-                </div>
               </div>
-            )}
-
-            {semana.length === 0 && !loading && (
-              <div className="text-center text-slate-600 py-16 text-sm">Sin datos de la semana</div>
             )}
           </div>
         )}
 
-        {/* ── EMPLEADOS ── */}
+        {/* EMPLEADOS */}
         {tab === TAB.EMPLEADOS && (
           <div className="space-y-3">
             <p className="text-slate-500 text-sm">Últimos 100 turnos de todos los empleados</p>
@@ -386,10 +388,9 @@ export default function Reportes() {
           </div>
         )}
 
-        {/* ── STOCK ── */}
+        {/* STOCK */}
         {tab === TAB.STOCK && (
           <div className="space-y-4">
-            {/* Alertas stock bajo */}
             {stockBajo.length > 0 && (
               <div className="bg-amber-950/40 border border-amber-800/40 rounded-xl p-4">
                 <div className="flex items-center gap-2 mb-3">
@@ -403,8 +404,7 @@ export default function Reportes() {
                         <p className="text-xs text-white font-medium">{p.nombre}</p>
                         <p className="text-xs text-amber-600">Stock: {p.stock} / mín: {p.stock_minimo}</p>
                       </div>
-                      <button
-                        onClick={() => { setModalStock(p); setNuevoStock(String(p.stock_minimo * 2)) }}
+                      <button onClick={() => { setModalStock(p); setNuevoStock(String(p.stock_minimo * 2)) }}
                         className="bg-amber-600 hover:bg-amber-500 text-white text-xs px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1">
                         <PlusIcon className="w-3 h-3" /> Sumar
                       </button>
@@ -413,8 +413,6 @@ export default function Reportes() {
                 </div>
               </div>
             )}
-
-            {/* Tabla completa */}
             <div className="bg-slate-800/50 border border-slate-700/40 rounded-xl overflow-hidden">
               <div className="px-4 py-3 border-b border-slate-700/40">
                 <h3 className="text-sm font-semibold text-slate-300">Todos los productos ({productos.length})</h3>
@@ -446,8 +444,7 @@ export default function Reportes() {
                           {p.stock_bajo && <ExclamationTriangleIcon className="w-3 h-3 text-amber-400 inline ml-1" />}
                         </td>
                         <td className="px-3 py-2.5">
-                          <button
-                            onClick={() => { setModalStock(p); setNuevoStock('') }}
+                          <button onClick={() => { setModalStock(p); setNuevoStock('') }}
                             className="text-slate-400 hover:text-indigo-400 transition-colors p-1 rounded-lg hover:bg-indigo-900/20">
                             <PlusIcon className="w-4 h-4" />
                           </button>
@@ -461,13 +458,13 @@ export default function Reportes() {
           </div>
         )}
 
-        {/* ── ALERTAS ── */}
+        {/* ALERTAS */}
         {tab === TAB.ALERTAS && (
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between mb-2">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between mb-3">
               <p className="text-slate-500 text-xs">{alertas.length} movimientos registrados</p>
               <button onClick={cargarAlertas}
-                className="text-xs text-indigo-400 hover:text-indigo-300 border border-indigo-800/40 px-3 py-1 rounded-lg transition-all">
+                className="text-xs text-indigo-400 hover:text-indigo-300 border border-indigo-800/40 px-3 py-1.5 rounded-lg transition-all">
                 ↻ Actualizar
               </button>
             </div>
@@ -504,7 +501,7 @@ export default function Reportes() {
         )}
       </div>
 
-      {/* Modal ajuste de stock */}
+      {/* Modal ajuste stock */}
       {modalStock && (
         <div className="fixed inset-0 bg-black/70 z-40 flex items-center justify-center p-4">
           <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-sm animate-fade-in">
