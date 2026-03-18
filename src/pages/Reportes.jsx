@@ -33,6 +33,7 @@ export default function Reportes() {
   const [alertas, setAlertas]           = useState([])
   const [stockBajo, setStockBajo]       = useState([])
 
+  const [solicitudes, setSolicitudes] = useState([])
   const [botones, setBotones] = useState([])
   const [modalBoton, setModalBoton] = useState(null)
   const [formBoton, setFormBoton] = useState({ nombre: '', emoji: '', precio: '' })
@@ -44,13 +45,18 @@ export default function Reportes() {
   const [toastMsg, setToastMsg]         = useState(null)
 
   useEffect(() => {
-    if (tab === TAB.HOY)       cargarHoy()
+    if (tab === TAB.HOY)       { cargarHoy(); cargarSolicitudes() }
     if (tab === TAB.SEMANA)    cargarSemana()
     if (tab === TAB.EMPLEADOS) cargarTurnos()
     if (tab === TAB.STOCK)     cargarStock()
     if (tab === TAB.ALERTAS)   cargarAlertas()
     if (tab === TAB.BOTONES)   cargarBotones()
   }, [tab, fecha])
+
+  const cargarSolicitudes = async () => {
+    try { const r = await api.get('/solicitudes/stock/pendientes'); setSolicitudes(r.data) }
+    catch {}
+  }
 
   const cargarBotones = async () => {
     try { const r = await api.get('/botones'); setBotones(r.data) }
