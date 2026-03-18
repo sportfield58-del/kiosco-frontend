@@ -50,6 +50,16 @@ export default function Reportes() {
     if (tab === TAB.ALERTAS)   cargarAlertas()
   }, [tab, fecha])
 
+  // Auto-refresh cada 30 segundos en Alertas y Empleados
+  useEffect(() => {
+    if (tab !== TAB.ALERTAS && tab !== TAB.EMPLEADOS) return
+    const interval = setInterval(() => {
+      if (tab === TAB.ALERTAS)   cargarAlertas()
+      if (tab === TAB.EMPLEADOS) cargarTurnos()
+    }, 30000)
+    return () => clearInterval(interval)
+  }, [tab])
+
   const cargarSolicitudes = async () => {
     try {
       const r = await api.get('/solicitudes/stock/pendientes')
