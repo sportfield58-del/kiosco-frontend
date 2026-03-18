@@ -29,15 +29,23 @@ export default function Caja() {
   const [modalCierre, setModalCierre] = useState(false)
   const [montoCierre, setMontoCierre] = useState('')
   const [resumenCierre, setResumenCierre] = useState(null)
+  const [botonesRapidos, setBotonesRapidos] = useState([])
   const inputRef = useRef()
 
-  useEffect(() => { cargarTurno() }, [])
+  useEffect(() => { cargarTurno(); cargarBotones() }, [])
 
   const cargarTurno = async () => {
     try {
       const res = await api.get(`/turnos/activo/${user.id}`)
       setTurno(res.data.turno)
       if (res.data.turno) cargarVentas(res.data.turno.id)
+    } catch {}
+  }
+
+  const cargarBotones = async () => {
+    try {
+      const res = await api.get('/botones')
+      setBotonesRapidos(res.data.filter(b => b.activo))
     } catch {}
   }
 
@@ -85,6 +93,26 @@ export default function Caja() {
     }
     inputRef.current?.focus()
   }, [codigo])
+
+  const agregarBotonRapido = (boton) => {
+    setCarrito(prev => {
+      const key = `rapido-${boton.id}`
+      const existe = prev.find(i => i.producto_id === key)
+      if (existe) return prev.map(i =>
+        i.producto_id === key
+          ? { ...i, cantidad: i.cantidad + 1, subtotal: (i.cantidad + 1) * i.precio_unitario }
+          : i
+      )
+      return [...prev, {
+        producto_id: key,
+        nombre: `${boton.emoji} ${boton.nombre}`,
+        precio_unitario: boton.precio,
+        cantidad: 1,
+        subtotal: boton.precio
+      }]
+    })
+    inputRef.current?.focus()
+  }
 
   const cambiarCantidad = (id, delta) => {
     setCarrito(prev => prev
