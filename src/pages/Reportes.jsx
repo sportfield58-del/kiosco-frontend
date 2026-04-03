@@ -7,7 +7,8 @@ import {
 import {
   CalendarIcon, BanknotesIcon, ChartBarIcon, BellAlertIcon,
   UsersIcon, CubeIcon, ArrowTrendingUpIcon, ClockIcon,
-  ExclamationTriangleIcon, PlusIcon, CheckIcon
+  ExclamationTriangleIcon, PlusIcon, CheckIcon,
+  ChevronDownIcon, ChevronUpIcon
 } from '@heroicons/react/24/outline'
 
 const TAB = { HOY: 'hoy', SEMANA: 'semana', EMPLEADOS: 'empleados', STOCK: 'stock', ALERTAS: 'alertas' }
@@ -37,10 +38,9 @@ export default function Reportes() {
   const [nuevoStock, setNuevoStock] = useState('')
   const [motivoStock, setMotivoStock] = useState('')
   const [toastMsg, setToastMsg]     = useState(null)
+  const [turnoExpandido, setTurnoExpandido] = useState(null)
 
-  useEffect(() => {
-    cargarSolicitudes()
-  }, [])
+  useEffect(() => { cargarSolicitudes() }, [])
 
   useEffect(() => {
     if (tab === TAB.HOY)       cargarHoy()
@@ -50,7 +50,6 @@ export default function Reportes() {
     if (tab === TAB.ALERTAS)   cargarAlertas()
   }, [tab, fecha])
 
-  // Auto-refresh cada 30 segundos en Alertas y Empleados
   useEffect(() => {
     if (tab !== TAB.ALERTAS && tab !== TAB.EMPLEADOS) return
     const interval = setInterval(() => {
@@ -100,11 +99,8 @@ export default function Reportes() {
 
   const cargarAlertas = async () => {
     setLoading(true)
-    try {
-      const r = await api.get('/reportes/alertas')
-      setAlertas(r.data)
-    } catch {}
-    finally { setLoading(false) }
+    try { const r = await api.get('/reportes/alertas'); setAlertas(r.data) }
+    catch {} finally { setLoading(false) }
   }
 
   const ajustarStock = async () => {
@@ -128,10 +124,22 @@ export default function Reportes() {
     setTimeout(() => setToastMsg(null), 3000)
   }
 
-  const proySemana = semana.reduce((s, d) => s + d.total, 0)
+  const toggleTurno = (id) => setTurnoExpandido(prev => prev === id ? null : id)
+
+  const formatFecha = (f) => f ? new Date(f).toLocaleString('es-AR', {
+    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+    timeZone: 'America/Argentina/Buenos_Aires'
+  }) : '—'
+
+  const formatHora = (f) => f ? new Date(f).toLocaleTimeString('es-AR', {
+    hour: '2-digit', minute: '2-digit',
+    timeZone: 'America/Argentina/Buenos_Aires'
+  }) : '—'
+
+  const proySemana  = semana.reduce((s, d) => s + d.total, 0)
   const proyGanancia = semana.reduce((s, d) => s + d.ganancia, 0)
-  const proyMes = (proySemana / 7) * 30
-  const proyGanMes = (proyGanancia / 7) * 30
+  const proyMes     = (proySemana / 7) * 30
+  const proyGanMes  = (proyGanancia / 7) * 30
 
   const DIAS_ES = { Monday:'Lun', Tuesday:'Mar', Wednesday:'Mié', Thursday:'Jue', Friday:'Vie', Saturday:'Sáb', Sunday:'Dom' }
 
@@ -339,60 +347,137 @@ export default function Reportes() {
         {/* EMPLEADOS */}
         {tab === TAB.EMPLEADOS && (
           <div className="space-y-3">
-            <p className="text-slate-500 text-sm">Últimos 100 turnos de todos los empleados</p>
+            <p className="text-slate-500 text-sm">Últimos 100 turnos — hacé click en "Ver detalle" para ver qué se vendió</p>
             {turnos.length === 0 && !loading && (
               <div className="text-center text-slate-600 py-16 text-sm">Sin turnos registrados</div>
             )}
             {turnos.map(t => (
-              <div key={t.id} className="bg-slate-800/50 border border-slate-700/40 rounded-xl p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold ${
-                      t.tipo === 'mañana' ? 'bg-amber-900/50 text-amber-400' :
-                      t.tipo === 'tarde'  ? 'bg-orange-900/50 text-orange-400' :
-                                            'bg-indigo-900/50 text-indigo-400'
-                    }`}>
-                      {t.tipo === 'mañana' ? '☀️' : t.tipo === 'tarde' ? '🌤' : '🌙'}
+              <div key={t.id} className="bg-slate-800/50 border border-slate-700/40 rounded-xl overflow-hidden">
+                {/* Cabecera del turno */}
+                <div className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold ${
+                        t.tipo === 'mañana' ? 'bg-amber-900/50 text-amber-400' :
+                        t.tipo === 'tarde'  ? 'bg-orange-900/50 text-orange-400' :
+                                              'bg-indigo-900/50 text-indigo-400'
+                      }`}>
+                        {t.tipo === 'mañana' ? '☀️' : t.tipo === 'tarde' ? '🌤' : '🌙'}
+                      </div>
+                      <div>
+                        <p className="text-white font-semibold text-sm">{t.usuario}</p>
+                        <p className="text-slate-500 text-xs capitalize">{t.tipo}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-green-400 font-bold">${t.total_ventas.toFixed(2)}</p>
+                      <p className="text-slate-500 text-xs">{t.cantidad_ventas} ventas</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-slate-700/40">
+                    <div>
+                      <p className="text-xs text-slate-500">Fichó entrada</p>
+                      <p className="text-xs text-white font-medium">{formatFecha(t.inicio)}</p>
                     </div>
                     <div>
-                      <p className="text-white font-semibold text-sm">{t.usuario}</p>
-                      <p className="text-slate-500 text-xs capitalize">{t.tipo}</p>
+                      <p className="text-xs text-slate-500">Fichó salida</p>
+                      <p className="text-xs text-white font-medium">
+                        {t.cierre ? formatFecha(t.cierre) : <span className="text-amber-400">Turno activo</span>}
+                      </p>
                     </div>
+                    {t.monto_apertura != null && (
+                      <div>
+                        <p className="text-xs text-slate-500">Caja apertura</p>
+                        <p className="text-xs text-white">${t.monto_apertura.toFixed(2)}</p>
+                      </div>
+                    )}
+                    {t.monto_cierre != null && (
+                      <div>
+                        <p className="text-xs text-slate-500">Efectivo al cerrar</p>
+                        <p className="text-xs text-white">${t.monto_cierre.toFixed(2)}</p>
+                      </div>
+                    )}
                   </div>
-                  <div className="text-right">
-                    <p className="text-green-400 font-bold">${t.total_ventas.toFixed(2)}</p>
-                    <p className="text-slate-500 text-xs">{t.cantidad_ventas} ventas</p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-slate-700/40">
-                  <div>
-                    <p className="text-xs text-slate-500">Fichó entrada</p>
-                    <p className="text-xs text-white font-medium">
-                      {new Date(t.inicio).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit', timeZone: 'America/Argentina/Buenos_Aires' })}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">Fichó salida</p>
-                    <p className="text-xs text-white font-medium">
-                      {t.cierre
-                        ? new Date(t.cierre).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit', timeZone: 'America/Argentina/Buenos_Aires' })
-                        : <span className="text-amber-400">Turno activo</span>
+
+                  {/* Botón ver detalle */}
+                  {t.cantidad_ventas > 0 && (
+                    <button
+                      onClick={() => toggleTurno(t.id)}
+                      className="mt-3 w-full flex items-center justify-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 border border-indigo-800/40 hover:border-indigo-700/60 py-2 rounded-lg transition-all"
+                    >
+                      {turnoExpandido === t.id
+                        ? <><ChevronUpIcon className="w-3.5 h-3.5" /> Ocultar detalle</>
+                        : <><ChevronDownIcon className="w-3.5 h-3.5" /> Ver qué se vendió</>
                       }
-                    </p>
-                  </div>
-                  {t.monto_apertura != null && (
-                    <div>
-                      <p className="text-xs text-slate-500">Caja apertura</p>
-                      <p className="text-xs text-white">${t.monto_apertura.toFixed(2)}</p>
-                    </div>
-                  )}
-                  {t.monto_cierre != null && (
-                    <div>
-                      <p className="text-xs text-slate-500">Efectivo al cerrar</p>
-                      <p className="text-xs text-white">${t.monto_cierre.toFixed(2)}</p>
-                    </div>
+                    </button>
                   )}
                 </div>
+
+                {/* Detalle expandido */}
+                {turnoExpandido === t.id && (
+                  <div className="border-t border-slate-700/40 bg-slate-900/40 p-4 space-y-4">
+
+                    {/* Resumen por producto */}
+                    {t.resumen_productos?.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                          Productos vendidos
+                        </p>
+                        <div className="space-y-1.5">
+                          {t.resumen_productos.map((p, i) => (
+                            <div key={i} className="flex items-center justify-between py-1.5 border-b border-slate-700/30 last:border-0">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="text-slate-600 text-xs w-5 shrink-0">{i + 1}.</span>
+                                <span className="text-white text-sm truncate">{p.nombre}</span>
+                              </div>
+                              <div className="flex items-center gap-3 shrink-0 ml-2">
+                                <span className="text-slate-400 text-xs">x{p.cantidad}</span>
+                                <span className="text-indigo-400 font-mono text-sm font-semibold">${p.subtotal.toFixed(2)}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Lista de cada venta */}
+                    {t.detalle_ventas?.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                          Detalle venta por venta ({t.detalle_ventas.length})
+                        </p>
+                        <div className="space-y-2 max-h-72 overflow-auto">
+                          {t.detalle_ventas.map((v, i) => (
+                            <div key={v.id} className="bg-slate-800/60 rounded-lg p-3">
+                              <div className="flex items-center justify-between mb-1.5">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-slate-600 text-xs">#{i + 1}</span>
+                                  <span className="text-xs text-slate-400">{formatHora(v.fecha)}</span>
+                                  <span className="text-xs text-slate-500 bg-slate-700/50 px-1.5 py-0.5 rounded">
+                                    {LABEL_MEDIO[v.medio_pago] || v.medio_pago}
+                                  </span>
+                                </div>
+                                <span className="text-white font-bold font-mono text-sm">${v.total.toFixed(2)}</span>
+                              </div>
+                              <div className="space-y-0.5 pl-2 border-l border-slate-700/50">
+                                {v.items.map((item, j) => (
+                                  <div key={j} className="flex justify-between items-center text-xs">
+                                    <span className="text-slate-300 truncate">{item.nombre}</span>
+                                    <div className="flex items-center gap-2 shrink-0 ml-2">
+                                      <span className="text-slate-500">x{item.cantidad}</span>
+                                      <span className="text-slate-400 font-mono">${item.subtotal.toFixed(2)}</span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>

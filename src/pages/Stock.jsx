@@ -25,6 +25,7 @@ export default function Stock() {
   })
 
   const esDueno = ['admin','dueño'].includes(user?.rol)
+  const puedeEditar = esDueno || user?.stock_habilitado === true
 
   useEffect(() => { verificarAcceso() }, [])
 
@@ -177,13 +178,15 @@ export default function Stock() {
           <h1 className="text-xl font-bold text-white">Stock</h1>
           <p className="text-slate-400 text-sm">{productos.length} productos</p>
         </div>
-        {esDueno && (
+        {puedeEditar && (
           <div className="flex gap-2">
             <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={importarExcel} />
-            <button onClick={() => fileRef.current?.click()}
-              className="flex items-center gap-2 border border-slate-600 hover:border-slate-500 text-slate-300 hover:text-white px-3 py-2 rounded-lg text-sm transition-all">
-              <ArrowUpTrayIcon className="w-4 h-4" /> Importar Excel
-            </button>
+            {esDueno && (
+              <button onClick={() => fileRef.current?.click()}
+                className="flex items-center gap-2 border border-slate-600 hover:border-slate-500 text-slate-300 hover:text-white px-3 py-2 rounded-lg text-sm transition-all">
+                <ArrowUpTrayIcon className="w-4 h-4" /> Importar Excel
+              </button>
+            )}
             <button onClick={abrirNuevo}
               className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-lg text-sm font-medium transition-all">
               <PlusIcon className="w-4 h-4" /> Nuevo
@@ -222,7 +225,7 @@ export default function Stock() {
                 <th className="text-right pb-2 px-2">Ganancia</th>
                 <th className="text-right pb-2 px-2">Stock</th>
                 <th className="text-right pb-2 px-2">Mín.</th>
-                {esDueno && <th className="pb-2 px-2"></th>}
+                {puedeEditar && <th className="pb-2 px-2"></th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/30">
@@ -238,7 +241,7 @@ export default function Stock() {
                     {p.stock_bajo && <ExclamationTriangleIcon className="w-3 h-3 text-amber-400 inline ml-1" />}
                   </td>
                   <td className="py-2.5 px-2 text-right text-slate-500">{p.stock_minimo}</td>
-                  {esDueno && (
+                  {puedeEditar && (
                     <td className="py-2.5 px-2">
                       <div className="flex gap-1 justify-end">
                         <button onClick={() => abrirEditar(p)}
@@ -259,7 +262,7 @@ export default function Stock() {
         )}
       </div>
 
-      {esDueno && modal && (
+      {puedeEditar && modal && (
         <div className="fixed inset-0 bg-black/70 z-40 flex items-center justify-center p-4">
           <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-md animate-fade-in">
             <div className="flex items-center justify-between mb-5">

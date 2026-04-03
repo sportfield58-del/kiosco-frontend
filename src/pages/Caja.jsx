@@ -4,7 +4,8 @@ import { useAuth } from '../context/AuthContext'
 import { useOffline } from '../hooks/useOffline'
 import {
   TrashIcon, BanknotesIcon, CreditCardIcon,
-  ArrowPathIcon, CheckCircleIcon, ExclamationCircleIcon
+  ArrowPathIcon, CheckCircleIcon, ExclamationCircleIcon,
+  MoonIcon, ChevronDownIcon, ChevronUpIcon
 } from '@heroicons/react/24/outline'
 
 const MEDIOS = [
@@ -32,9 +33,27 @@ export default function Caja() {
   const [modalCierre, setModalCierre] = useState(false)
   const [montoCierre, setMontoCierre] = useState('')
   const [resumenCierre, setResumenCierre] = useState(null)
+  const [recargoNocturno, setRecargoNocturno] = useState(false)
+  const [verDetalleVentas, setVerDetalleVentas] = useState(false)
+  const [verResumenProductos, setVerResumenProductos] = useState(true)
   const inputRef = useRef()
 
-  useEffect(() => { cargarTurno(); cargarProductos() }, [])
+  useEffect(() => { cargarTurno(); cargarProductos(); verificarRecargoNocturno() }, [])
+
+  useEffect(() => {
+    const intervalo = setInterval(verificarRecargoNocturno, 5 * 60 * 1000)
+    return () => clearInterval(intervalo)
+  }, [])
+
+  const verificarRecargoNocturno = async () => {
+    try {
+      const res = await api.get('/ventas/recargo-nocturno')
+      setRecargoNocturno(res.data.activo)
+    } catch {
+      const hora = new Date().getHours()
+      setRecargoNocturno(hora >= 22 || hora < 6)
+    }
+  }
 
   const cargarProductos = async () => {
     try {
@@ -72,9 +91,7 @@ export default function Caja() {
 
   const buscarSugerencias = (texto) => {
     if (!texto.trim() || texto.length < 2) {
-      setSugerencias([])
-      setMostrarSugerencias(false)
-      return
+      setSugerencias([]); setMostrarSugerencias(false); return
     }
     const filtrados = productosStock.filter(p =>
       p.nombre.toLowerCase().includes(texto.toLowerCase())
@@ -96,9 +113,7 @@ export default function Caja() {
         precio_unitario: p.precio_venta, cantidad: 1, subtotal: p.precio_venta
       }]
     })
-    setCodigo('')
-    setSugerencias([])
-    setMostrarSugerencias(false)
+    setCodigo(''); setSugerencias([]); setMostrarSugerencias(false)
     inputRef.current?.focus()
   }
 
@@ -106,49 +121,20 @@ export default function Caja() {
     e.preventDefault()
     const cod = codigo.trim()
     if (!cod) return
-    setSugerencias([])
-    setMostrarSugerencias(false)
-    setCodigo('')
+    setSugerencias([]); setMostrarSugerencias(false); setCodigo('')
     try {
       const res = await api.get(`/productos/buscar?codigo=${cod}`)
       agregarProducto(res.data)
     } catch {
-      // Si no encuentra por código, buscar por nombre
       const filtrados = productosStock.filter(p =>
         p.nombre.toLowerCase().includes(cod.toLowerCase())
       )
-      if (filtrados.length === 1) {
-        agregarProducto(filtrados[0])
-      } else if (filtrados.length > 1) {
-        setSugerencias(filtrados.slice(0, 6))
-        setMostrarSugerencias(true)
-        setCodigo(cod)
-      } else {
-        mostrarToast('Producto no encontrado', 'error')
-      }
+      if (filtrados.length === 1) agregarProducto(filtrados[0])
+      else if (filtrados.length > 1) { setSugerencias(filtrados.slice(0, 6)); setMostrarSugerencias(true); setCodigo(cod) }
+      else mostrarToast('Producto no encontrado', 'error')
     }
     inputRef.current?.focus()
   }, [codigo, productosStock])
-
-  const agregarBotonRapido = (boton) => {
-    setCarrito(prev => {
-      const key = `rapido-${boton.id}`
-      const existe = prev.find(i => i.producto_id === key)
-      if (existe) return prev.map(i =>
-        i.producto_id === key
-          ? { ...i, cantidad: i.cantidad + 1, subtotal: (i.cantidad + 1) * i.precio_unitario }
-          : i
-      )
-      return [...prev, {
-        producto_id: key,
-        nombre: `${boton.emoji} ${boton.nombre}`,
-        precio_unitario: boton.precio,
-        cantidad: 1,
-        subtotal: boton.precio
-      }]
-    })
-    inputRef.current?.focus()
-  }
 
   const cambiarCantidad = (id, delta) => {
     setCarrito(prev => prev
@@ -160,38 +146,34 @@ export default function Caja() {
     )
   }
 
-  const totalCarrito = carrito.reduce((s, i) => s + i.subtotal, 0)
-  const montoNum     = parseFloat(montoRecibido) || 0
-  const vuelto       = medio === 'efectivo' && montoNum >= totalCarrito && totalCarrito > 0 ? montoNum - totalCarrito : 0
+  const totalCarrito    = carrito.reduce((s, i) => s + i.subtotal, 0)
+  const totalConRecargo = recargoNocturno ? Math.round(totalCarrito * 1.10 * 100) / 100 : totalCarrito
+  const montoNum        = parseFloat(montoRecibido) || 0
+  const vuelto          = medio === 'efectivo' && montoNum >= totalConRecargo && totalConRecargo > 0 ? montoNum - totalConRecargo : 0
 
   const cobrar = async () => {
     if (!carrito.length || cargando) return
-    if (medio === 'efectivo' && montoNum > 0 && montoNum < totalCarrito) {
-      mostrarToast('El monto recibido es menor al total', 'error')
-      return
+    if (medio === 'efectivo' && montoNum > 0 && montoNum < totalConRecargo) {
+      mostrarToast('El monto recibido es menor al total', 'error'); return
     }
     setCargando(true)
     const payload = { usuario_id: user.id, items: carrito, total: totalCarrito, medio_pago: medio }
     try {
       if (offline) {
         encolarOffline({ method: 'post', url: '/ventas', data: payload })
-        mostrarToast(`Venta guardada offline — $${totalCarrito.toFixed(2)}`, 'ok')
+        mostrarToast(`Venta guardada offline — $${totalConRecargo.toFixed(2)}`, 'ok')
       } else {
-        await api.post('/ventas', payload)
-        if (medio === 'efectivo' && vuelto > 0) {
-          mostrarToast(`Vuelto: $${vuelto.toFixed(2)}`, 'ok')
-        } else {
-          mostrarToast(`Cobrado $${totalCarrito.toFixed(2)} en ${labelMedio(medio)}`, 'ok')
-        }
+        const res = await api.post('/ventas', payload)
+        if (res.data.recargo_nocturno) mostrarToast(`Cobrado $${totalConRecargo.toFixed(2)} (+10% nocturno)`, 'ok')
+        else if (medio === 'efectivo' && vuelto > 0) mostrarToast(`Vuelto: $${vuelto.toFixed(2)}`, 'ok')
+        else mostrarToast(`Cobrado $${totalConRecargo.toFixed(2)} en ${labelMedio(medio)}`, 'ok')
         if (turno) cargarVentas(turno.id)
       }
-      setCarrito([])
-      setMontoRecibido('')
+      setCarrito([]); setMontoRecibido('')
     } catch (e) {
       mostrarToast(e.response?.data?.detail || 'Error al registrar', 'error')
     } finally {
-      setCargando(false)
-      inputRef.current?.focus()
+      setCargando(false); inputRef.current?.focus()
     }
   }
 
@@ -199,11 +181,11 @@ export default function Caja() {
     if (!turno) return
     try {
       const res = await api.post('/turnos/cerrar', {
-        usuario_id: user.id,
-        monto_cierre: parseFloat(montoCierre) || 0
+        usuario_id: user.id, monto_cierre: parseFloat(montoCierre) || 0
       })
       setResumenCierre(res.data.resumen)
       setTurno(null); setCarrito([]); setVentas([]); setTotal(0); setPorMedio({})
+      setModalCierre(false)
     } catch (e) {
       mostrarToast(e.response?.data?.detail || 'Error al cerrar', 'error')
       setModalCierre(false)
@@ -217,6 +199,10 @@ export default function Caja() {
 
   const labelMedio = (id) => MEDIOS.find(m => m.id === id)?.label || id
 
+  const formatHora = (fecha) => new Date(fecha).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+  const formatFecha = (fecha) => new Date(fecha).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+
+  // ── Sin turno ──
   if (!turno && !resumenCierre) return (
     <div className="flex items-center justify-center h-full p-6">
       <div className="bg-slate-800 border border-slate-700/50 rounded-2xl p-8 w-full max-w-sm text-center animate-fade-in">
@@ -237,38 +223,134 @@ export default function Caja() {
     </div>
   )
 
+  // ── Resumen de cierre con detalle completo ──
   if (resumenCierre) return (
-    <div className="flex items-center justify-center h-full p-6">
-      <div className="bg-slate-800 border border-slate-700/50 rounded-2xl p-8 w-full max-w-md animate-fade-in">
-        <div className="flex items-center gap-3 mb-6">
-          <CheckCircleIcon className="w-8 h-8 text-green-400" />
+    <div className="flex items-center justify-center h-full p-4 overflow-auto">
+      <div className="bg-slate-800 border border-slate-700/50 rounded-2xl p-6 w-full max-w-2xl animate-fade-in">
+        <div className="flex items-center gap-3 mb-5">
+          <CheckCircleIcon className="w-8 h-8 text-green-400 shrink-0" />
           <div>
             <h2 className="text-xl font-bold text-white">Turno cerrado</h2>
-            <p className="text-slate-400 text-sm capitalize">{resumenCierre.tipo}</p>
+            <p className="text-slate-400 text-sm capitalize">
+              {resumenCierre.tipo} · {formatFecha(resumenCierre.inicio)} → {formatFecha(resumenCierre.cierre)}
+            </p>
           </div>
         </div>
-        <div className="space-y-2 mb-4">
-          <Row label="Total vendido" value={`$${resumenCierre.total_ventas?.toFixed(2)}`} big />
-          <Row label="Cantidad de ventas" value={resumenCierre.cantidad_ventas} />
+
+        {/* Totales */}
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div className="bg-slate-700/40 rounded-xl p-4">
+            <p className="text-xs text-slate-400 mb-1">Total vendido</p>
+            <p className="text-2xl font-bold text-green-400 font-mono">${resumenCierre.total_ventas?.toFixed(2)}</p>
+          </div>
+          <div className="bg-slate-700/40 rounded-xl p-4">
+            <p className="text-xs text-slate-400 mb-1">Cantidad de ventas</p>
+            <p className="text-2xl font-bold text-white font-mono">{resumenCierre.cantidad_ventas}</p>
+          </div>
         </div>
-        <div className="bg-slate-700/40 rounded-xl p-4 mb-4 space-y-3">
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Por medio de pago</p>
-          {['efectivo','tarjeta','mercadopago'].map(m => {
-            const val = resumenCierre.por_medio_pago?.[m] || 0
-            const colors = { efectivo:'text-green-400', tarjeta:'text-blue-400', mercadopago:'text-cyan-400' }
-            return (
-              <div key={m} className="flex justify-between items-center">
-                <span className="text-slate-300 text-sm">{labelMedio(m)}</span>
-                <span className={`font-bold font-mono text-lg ${colors[m]}`}>${val.toFixed(2)}</span>
+
+        {/* Por medio de pago */}
+        <div className="bg-slate-700/40 rounded-xl p-4 mb-4">
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Por medio de pago</p>
+          <div className="space-y-2">
+            {['efectivo','tarjeta','mercadopago'].map(m => {
+              const val = resumenCierre.por_medio_pago?.[m] || 0
+              if (!val) return null
+              const colors = { efectivo:'text-green-400', tarjeta:'text-blue-400', mercadopago:'text-cyan-400' }
+              return (
+                <div key={m} className="flex justify-between items-center">
+                  <span className="text-slate-300 text-sm">{labelMedio(m)}</span>
+                  <span className={`font-bold font-mono ${colors[m]}`}>${val.toFixed(2)}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Resumen por producto — qué se vendió */}
+        {resumenCierre.resumen_productos?.length > 0 && (
+          <div className="bg-slate-700/40 rounded-xl p-4 mb-4">
+            <button
+              onClick={() => setVerResumenProductos(v => !v)}
+              className="w-full flex items-center justify-between text-left"
+            >
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                Productos vendidos ({resumenCierre.resumen_productos.length})
+              </p>
+              {verResumenProductos
+                ? <ChevronUpIcon className="w-4 h-4 text-slate-400" />
+                : <ChevronDownIcon className="w-4 h-4 text-slate-400" />}
+            </button>
+            {verResumenProductos && (
+              <div className="mt-3 space-y-1.5 max-h-48 overflow-auto">
+                {resumenCierre.resumen_productos.map((p, i) => (
+                  <div key={i} className="flex items-center justify-between py-1.5 border-b border-slate-600/40 last:border-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-slate-500 text-xs w-5 shrink-0">{i + 1}.</span>
+                      <span className="text-white text-sm truncate">{p.nombre}</span>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0 ml-2">
+                      <span className="text-slate-400 text-xs">x{p.cantidad}</span>
+                      <span className="text-indigo-400 font-mono text-sm font-semibold">${p.subtotal.toFixed(2)}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
-            )
-          })}
-        </div>
-        <div className="border-t border-slate-700/50 pt-3 mb-6 space-y-2">
-          <Row label="Caja al abrir"  value={`$${resumenCierre.monto_apertura?.toFixed(2)}`} />
+            )}
+          </div>
+        )}
+
+        {/* Lista completa de ventas */}
+        {resumenCierre.detalle_ventas?.length > 0 && (
+          <div className="bg-slate-700/40 rounded-xl p-4 mb-4">
+            <button
+              onClick={() => setVerDetalleVentas(v => !v)}
+              className="w-full flex items-center justify-between text-left"
+            >
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                Detalle de ventas ({resumenCierre.detalle_ventas.length})
+              </p>
+              {verDetalleVentas
+                ? <ChevronUpIcon className="w-4 h-4 text-slate-400" />
+                : <ChevronDownIcon className="w-4 h-4 text-slate-400" />}
+            </button>
+            {verDetalleVentas && (
+              <div className="mt-3 space-y-3 max-h-64 overflow-auto">
+                {resumenCierre.detalle_ventas.map((v, i) => (
+                  <div key={v.id} className="bg-slate-800/60 rounded-lg p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-500 text-xs">#{i + 1}</span>
+                        <span className="text-xs text-slate-400">{formatHora(v.fecha)}</span>
+                        <span className="text-xs text-slate-500">{labelMedio(v.medio_pago)}</span>
+                      </div>
+                      <span className="text-white font-bold font-mono text-sm">${v.total.toFixed(2)}</span>
+                    </div>
+                    <div className="space-y-1">
+                      {v.items.map((item, j) => (
+                        <div key={j} className="flex justify-between items-center text-xs">
+                          <span className="text-slate-300 truncate">{item.nombre}</span>
+                          <div className="flex items-center gap-2 shrink-0 ml-2">
+                            <span className="text-slate-500">x{item.cantidad}</span>
+                            <span className="text-slate-400 font-mono">${item.subtotal.toFixed(2)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Caja */}
+        <div className="border-t border-slate-700/50 pt-3 mb-5 space-y-2">
+          <Row label="Caja al abrir" value={`$${resumenCierre.monto_apertura?.toFixed(2)}`} />
           <Row label="Efectivo contado al cerrar" value={`$${resumenCierre.monto_cierre?.toFixed(2)}`} />
         </div>
-        <button onClick={() => setResumenCierre(null)}
+
+        <button onClick={() => { setResumenCierre(null); setVerDetalleVentas(false); setVerResumenProductos(true) }}
           className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl transition-all">
           Abrir nuevo turno
         </button>
@@ -276,6 +358,7 @@ export default function Caja() {
     </div>
   )
 
+  // ── Caja principal ──
   return (
     <div className="flex h-full">
       {toast && (
@@ -340,6 +423,15 @@ export default function Caja() {
           </button>
         </div>
 
+        {recargoNocturno && (
+          <div className="flex items-center gap-2 bg-amber-950/60 border border-amber-700/50 rounded-xl px-4 py-2.5">
+            <MoonIcon className="w-4 h-4 text-amber-400 shrink-0" />
+            <p className="text-amber-300 text-sm font-semibold">
+              Tarifa nocturna activa — se aplica +10% en todas las ventas (22:00 a 06:00)
+            </p>
+          </div>
+        )}
+
         <div className="relative">
           <form onSubmit={escanear} className="flex gap-2">
             <input
@@ -360,11 +452,8 @@ export default function Caja() {
           {mostrarSugerencias && sugerencias.length > 0 && (
             <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-slate-800 border border-slate-600 rounded-xl overflow-hidden shadow-2xl">
               {sugerencias.map(p => (
-                <button
-                  key={p.id}
-                  onMouseDown={() => agregarProducto(p)}
-                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-700 transition-colors text-left border-b border-slate-700/50 last:border-0"
-                >
+                <button key={p.id} onMouseDown={() => agregarProducto(p)}
+                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-700 transition-colors text-left border-b border-slate-700/50 last:border-0">
                   <div>
                     <p className="text-white text-sm font-medium">{p.nombre}</p>
                     <p className="text-slate-500 text-xs">Stock: {p.stock} unidades</p>
@@ -412,44 +501,50 @@ export default function Caja() {
                 className={`flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl text-xs font-medium transition-all ${
                   medio === id ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/30' : 'bg-slate-700/60 text-slate-400 hover:text-white'
                 }`}>
-                <Icon className="w-4 h-4" />
-                {label}
+                <Icon className="w-4 h-4" />{label}
               </button>
             ))}
           </div>
 
           <div className="flex items-center justify-between">
             <span className="text-slate-400 text-sm">Total</span>
-            <span className="text-2xl font-bold text-white font-mono">${totalCarrito.toFixed(2)}</span>
+            <div className="text-right">
+              {recargoNocturno && carrito.length > 0 && (
+                <p className="text-slate-500 text-xs line-through">${totalCarrito.toFixed(2)}</p>
+              )}
+              <span className={`text-2xl font-bold font-mono ${recargoNocturno && carrito.length > 0 ? 'text-amber-400' : 'text-white'}`}>
+                ${totalConRecargo.toFixed(2)}
+              </span>
+              {recargoNocturno && carrito.length > 0 && (
+                <p className="text-amber-600 text-xs">+10% nocturno</p>
+              )}
+            </div>
           </div>
 
           {medio === 'efectivo' && carrito.length > 0 && (
             <div className="space-y-2">
-              <input
-                type="number"
-                placeholder="Monto recibido ($)..."
-                value={montoRecibido}
-                onChange={e => setMontoRecibido(e.target.value)}
-                className="w-full"
-              />
-              {montoNum > 0 && montoNum >= totalCarrito && (
+              <input type="number" placeholder="Monto recibido ($)..."
+                value={montoRecibido} onChange={e => setMontoRecibido(e.target.value)} className="w-full" />
+              {montoNum > 0 && montoNum >= totalConRecargo && (
                 <div className="flex justify-between items-center bg-green-950/50 border border-green-800/40 rounded-xl px-4 py-2.5">
                   <span className="text-green-400 text-sm font-semibold">Vuelto</span>
                   <span className="text-green-300 font-bold font-mono text-xl">${vuelto.toFixed(2)}</span>
                 </div>
               )}
-              {montoNum > 0 && montoNum < totalCarrito && (
+              {montoNum > 0 && montoNum < totalConRecargo && (
                 <div className="flex justify-between items-center bg-red-950/50 border border-red-800/40 rounded-xl px-4 py-2.5">
                   <span className="text-red-400 text-sm">Falta</span>
-                  <span className="text-red-300 font-bold font-mono text-xl">${(totalCarrito - montoNum).toFixed(2)}</span>
+                  <span className="text-red-300 font-bold font-mono text-xl">${(totalConRecargo - montoNum).toFixed(2)}</span>
                 </div>
               )}
             </div>
           )}
 
           <button onClick={cobrar} disabled={!carrito.length || cargando}
-            className="w-full bg-green-600 hover:bg-green-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-4 rounded-xl text-base transition-all shadow-lg shadow-green-900/30">
-            {cargando ? 'Procesando...' : `Cobrar $${totalCarrito.toFixed(2)}`}
+            className={`w-full disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-4 rounded-xl text-base transition-all shadow-lg ${
+              recargoNocturno ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-900/30' : 'bg-green-600 hover:bg-green-500 shadow-green-900/30'
+            }`}>
+            {cargando ? 'Procesando...' : `Cobrar $${totalConRecargo.toFixed(2)}${recargoNocturno ? ' 🌙' : ''}`}
           </button>
         </div>
       </div>
@@ -468,9 +563,16 @@ export default function Caja() {
                   <span className="text-white text-xs font-medium">${v.total.toFixed(2)}</span>
                   <span className="text-xs text-slate-500">{labelMedio(v.medio_pago)}</span>
                 </div>
-                <p className="text-slate-500 text-xs mt-0.5">
-                  {new Date(v.fecha).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
-                </p>
+                {v.items?.length > 0 && (
+                  <div className="mt-1 space-y-0.5">
+                    {v.items.map((item, i) => (
+                      <p key={i} className="text-slate-500 text-xs truncate">
+                        · {item.nombre} x{item.cantidad}
+                      </p>
+                    ))}
+                  </div>
+                )}
+                <p className="text-slate-600 text-xs mt-0.5">{formatHora(v.fecha)}</p>
               </div>
             ))
           }
