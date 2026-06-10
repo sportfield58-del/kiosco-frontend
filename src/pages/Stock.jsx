@@ -137,13 +137,8 @@ export default function Stock() {
   const exportarExcel = async () => {
     setExportando(true)
     try {
-      const token = localStorage.getItem('token')
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/productos/exportar-excel`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      if (!res.ok) throw new Error()
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
+      const res = await api.get('/productos/exportar-excel', { responseType: 'blob' })
+      const url = URL.createObjectURL(res.data)
       const a = document.createElement('a')
       a.href = url
       a.download = `productos_kiosco_${new Date().toISOString().slice(0, 10)}.xlsx`
