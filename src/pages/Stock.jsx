@@ -18,6 +18,7 @@ export default function Stock() {
   const [modal, setModal]         = useState(null)
   const [editando, setEditando]   = useState(null)
   const [mostrarAlertas, setMostrarAlertas] = useState(false)
+  const [exportando, setExportando] = useState(false)
   const fileRef = useRef()
 
   const [form, setForm] = useState({
@@ -133,6 +134,28 @@ export default function Stock() {
 
   const cerrarModal = () => { setModal(null); setEditando(null) }
 
+  const exportarExcel = async () => {
+    setExportando(true)
+    try {
+      const token = localStorage.getItem('token')
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/productos/exportar-excel`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (!res.ok) throw new Error()
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `productos_kiosco_${new Date().toISOString().slice(0, 10)}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      mostrarToast('Error al exportar', 'error')
+    } finally {
+      setExportando(false)
+    }
+  }
+
   const mostrarToast = (texto, tipo) => {
     setToast({ texto, tipo })
     setTimeout(() => setToast(null), 3000)
@@ -188,10 +211,16 @@ export default function Stock() {
             <div className="flex gap-2">
               <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={importarExcel} />
               {esDueno && (
-                <button onClick={() => fileRef.current?.click()}
-                  className="flex items-center gap-2 border border-slate-600 hover:border-slate-500 text-slate-300 hover:text-white px-3 py-2 rounded-lg text-sm transition-all">
-                  <ArrowUpTrayIcon className="w-4 h-4" /> Excel
-                </button>
+                <>
+                  <button onClick={() => fileRef.current?.click()}
+                    className="flex items-center gap-2 border border-slate-600 hover:border-slate-500 text-slate-300 hover:text-white px-3 py-2 rounded-lg text-sm transition-all">
+                    <ArrowUpTrayIcon className="w-4 h-4" /> Importar
+                  </button>
+                  <button onClick={exportarExcel} disabled={exportando}
+                    className="flex items-center gap-2 border border-slate-600 hover:border-slate-500 text-slate-300 hover:text-white px-3 py-2 rounded-lg text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                    {exportando ? 'Descargando...' : 'Excel'}
+                  </button>
+                </>
               )}
               <button onClick={abrirNuevo}
                 className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-lg text-sm font-medium transition-all">
