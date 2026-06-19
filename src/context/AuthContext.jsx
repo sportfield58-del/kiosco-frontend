@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react'
-import api from '../api'
+import api, { startKeepAlive, stopKeepAlive } from '../api'
 
 const AuthContext = createContext()
 
@@ -9,7 +9,10 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     const saved = localStorage.getItem('usuario')
-    if (saved) setUser(JSON.parse(saved))
+    if (saved) {
+      setUser(JSON.parse(saved))
+      startKeepAlive()
+    }
     setLoading(false)
   }, [])
 
@@ -21,6 +24,7 @@ export function AuthProvider({ children }) {
     localStorage.setItem('token', res.data.access_token)
     localStorage.setItem('usuario', JSON.stringify(res.data.usuario))
     setUser(res.data.usuario)
+    startKeepAlive()
     return res.data.usuario
   }
 
@@ -28,6 +32,7 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('token')
     localStorage.removeItem('usuario')
     setUser(null)
+    stopKeepAlive()
   }
 
   return (

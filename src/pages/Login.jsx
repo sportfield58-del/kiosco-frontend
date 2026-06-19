@@ -2,31 +2,55 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
+const MAX_RETRIES = 3
+const RETRY_DELAY = 2000
+
 export default function Login() {
   const { login } = useAuth()
   const navigate  = useNavigate()
-  const [form, setForm]       = useState({ username: '', password: '' })
-  const [error, setError]     = useState('')
-  const [loading, setLoading] = useState(false)
-  const [mounted, setMounted] = useState(false)
+  const [form, setForm]             = useState({ username: '', password: '' })
+  const [error, setError]           = useState('')
+  const [loading, setLoading]       = useState(false)
+  const [mounted, setMounted]       = useState(false)
+  const [statusMsg, setStatusMsg]   = useState('')
+  const [isNetworkError, setIsNetworkError] = useState(false)
 
   useEffect(() => {
     setTimeout(() => setMounted(true), 100)
   }, [])
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
+  const attemptLogin = async () => {
     if (!form.username || !form.password) { setError('Completá usuario y contraseña'); return }
-    setLoading(true); setError('')
-    try {
-      const user = await login(form.username, form.password)
-      navigate(user.rol === 'vendedor' ? '/caja' : '/reportes', { replace: true })
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Error al conectar con el servidor')
-    } finally {
-      setLoading(false)
+    setLoading(true)
+    setError('')
+    setIsNetworkError(false)
+
+    let lastError
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      setStatusMsg(attempt === 1 ? 'Conectando al servidor...' : `Conectando... intento ${attempt}/${MAX_RETRIES}`)
+      try {
+        const user = await login(form.username, form.password)
+        navigate(user.rol === 'vendedor' ? '/caja' : '/reportes', { replace: true })
+        return
+      } catch (err) {
+        lastError = err
+        const isAuthError = err.response?.status === 400 || err.response?.status === 401
+        if (isAuthError || attempt === MAX_RETRIES) break
+        setStatusMsg(`Reintentando en 2s... (intento ${attempt + 1}/${MAX_RETRIES})`)
+        await new Promise(r => setTimeout(r, RETRY_DELAY))
+      }
     }
+
+    if (!lastError?.response) {
+      setIsNetworkError(true)
+      setError('El sistema está iniciando, por favor esperá 30 segundos y volvé a intentar')
+    } else {
+      setError(lastError.response?.data?.detail || 'Error al conectar con el servidor')
+    }
+    setLoading(false)
   }
+
+  const handleSubmit = (e) => { e.preventDefault(); attemptLogin() }
 
   return (
     <div className="min-h-screen flex overflow-hidden" style={{ background: '#080808' }}>
@@ -222,7 +246,29 @@ export default function Login() {
               />
             </div>
 
-            {error && (
+            {/* Estado de carga */}
+            {loading && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '10px',
+                background: 'rgba(232,255,0,0.06)',
+                border: '1px solid rgba(232,255,0,0.15)',
+                borderRadius: '8px', padding: '10px 14px'
+              }}>
+                <div style={{
+                  width: '16px', height: '16px', borderRadius: '50%',
+                  border: '2px solid rgba(232,255,0,0.3)',
+                  borderTopColor: '#e8ff00',
+                  animation: 'spin 0.8s linear infinite',
+                  flexShrink: 0
+                }} />
+                <span style={{ fontSize: '0.82rem', color: 'rgba(232,255,0,0.8)' }}>
+                  {statusMsg}
+                </span>
+              </div>
+            )}
+
+            {/* Error de credenciales (rojo) */}
+            {error && !isNetworkError && (
               <div style={{
                 background: 'rgba(255,60,60,0.1)',
                 border: '1px solid rgba(255,60,60,0.3)',
@@ -230,6 +276,34 @@ export default function Login() {
                 fontSize: '0.82rem', borderRadius: '8px',
                 padding: '10px 14px'
               }}>{error}</div>
+            )}
+
+            {/* Error de red (naranja) con botón Reintentar */}
+            {error && isNetworkError && (
+              <div style={{
+                background: 'rgba(255,140,0,0.08)',
+                border: '1px solid rgba(255,140,0,0.3)',
+                borderRadius: '8px', padding: '12px 14px'
+              }}>
+                <div style={{ color: 'rgba(255,170,60,0.95)', fontSize: '0.82rem', marginBottom: '10px' }}>
+                  {error} 🔄
+                </div>
+                <button
+                  type="button"
+                  onClick={attemptLogin}
+                  style={{
+                    background: 'rgba(255,140,0,0.15)',
+                    border: '1px solid rgba(255,140,0,0.4)',
+                    color: 'rgba(255,170,60,0.95)',
+                    fontSize: '0.78rem', fontWeight: 700,
+                    letterSpacing: '0.08em', textTransform: 'uppercase',
+                    padding: '6px 14px', borderRadius: '6px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Reintentar
+                </button>
+              </div>
             )}
 
             <button
@@ -246,7 +320,7 @@ export default function Login() {
                 width: '100%'
               }}
             >
-              {loading ? 'Ingresando...' : 'Ingresar →'}
+              {loading ? 'Conectando...' : 'Ingresar →'}
             </button>
           </form>
 
@@ -286,6 +360,9 @@ export default function Login() {
         @keyframes pulse-slow {
           0%, 100% { opacity: 1; transform: scale(1); }
           50% { opacity: 0.6; transform: scale(1.05); }
+        }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
         }
         input::placeholder { color: rgba(245,245,240,0.2); }
       `}</style>

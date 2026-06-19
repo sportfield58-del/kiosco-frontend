@@ -2,7 +2,7 @@ import axios from 'axios'
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
-const api = axios.create({ baseURL: BASE_URL, timeout: 8000 })
+const api = axios.create({ baseURL: BASE_URL, timeout: 15000 })
 
 api.interceptors.request.use(config => {
   const token = localStorage.getItem('token')
@@ -53,6 +53,23 @@ export async function sincronizarCola() {
 
 export function contarPendientes() {
   return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]').length
+}
+
+// ── Keep-alive ─────────────────────────────────────────────
+let keepAliveInterval = null
+
+export function startKeepAlive() {
+  stopKeepAlive()
+  keepAliveInterval = setInterval(async () => {
+    try { await api.get('/ping') } catch { /* silencioso */ }
+  }, 4 * 60 * 1000)
+}
+
+export function stopKeepAlive() {
+  if (keepAliveInterval) {
+    clearInterval(keepAliveInterval)
+    keepAliveInterval = null
+  }
 }
 
 export default api
