@@ -34,6 +34,11 @@ export default function Reportes() {
   const [alertas, setAlertas]       = useState([])
   const [stockBajo, setStockBajo]   = useState([])
   const [solicitudes, setSolicitudes] = useState([])
+  const [alertaFecha, setAlertaFecha]           = useState('')
+  const [alertaHoraDesde, setAlertaHoraDesde]   = useState('')
+  const [alertaHoraHasta, setAlertaHoraHasta]   = useState('')
+  const [alertaUsuario, setAlertaUsuario]       = useState('')
+  const [alertaAccion, setAlertaAccion]         = useState('')
   const [modalStock, setModalStock] = useState(null)
   const [nuevoStock, setNuevoStock] = useState('')
   const [motivoStock, setMotivoStock] = useState('')
@@ -97,9 +102,17 @@ export default function Reportes() {
     } catch {} finally { setLoading(false) }
   }
 
-  const cargarAlertas = async () => {
+  const cargarAlertas = async (filtros = {}) => {
     setLoading(true)
-    try { const r = await api.get('/reportes/alertas'); setAlertas(r.data) }
+    const params = new URLSearchParams()
+    const f = { fecha: alertaFecha, hora_desde: alertaHoraDesde, hora_hasta: alertaHoraHasta, usuario_nombre: alertaUsuario, accion: alertaAccion, ...filtros }
+    if (f.fecha)          params.append('fecha', f.fecha)
+    if (f.hora_desde)     params.append('hora_desde', f.hora_desde)
+    if (f.hora_hasta)     params.append('hora_hasta', f.hora_hasta)
+    if (f.usuario_nombre) params.append('usuario_nombre', f.usuario_nombre)
+    if (f.accion)         params.append('accion', f.accion)
+    const qs = params.toString()
+    try { const r = await api.get(`/reportes/alertas${qs ? '?' + qs : ''}`); setAlertas(r.data) }
     catch {} finally { setLoading(false) }
   }
 
@@ -555,19 +568,84 @@ export default function Reportes() {
 
         {/* ALERTAS */}
         {tab === TAB.ALERTAS && (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-slate-500 text-xs">{alertas.length} movimientos registrados</p>
-              <button onClick={cargarAlertas}
-                className="text-xs text-indigo-400 hover:text-indigo-300 border border-indigo-800/40 px-3 py-1.5 rounded-lg transition-all">
-                ↻ Actualizar
-              </button>
+          <div className="space-y-3">
+
+            {/* Filtros */}
+            <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl p-4 space-y-3">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Filtrar movimientos</p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Fecha</label>
+                  <input type="date" value={alertaFecha}
+                    onChange={e => setAlertaFecha(e.target.value)}
+                    className="w-full bg-slate-700/50 border border-slate-600/50 rounded-lg px-3 py-2 text-sm text-white" />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Hora desde</label>
+                  <input type="time" value={alertaHoraDesde}
+                    onChange={e => setAlertaHoraDesde(e.target.value)}
+                    className="w-full bg-slate-700/50 border border-slate-600/50 rounded-lg px-3 py-2 text-sm text-white" />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Hora hasta</label>
+                  <input type="time" value={alertaHoraHasta}
+                    onChange={e => setAlertaHoraHasta(e.target.value)}
+                    className="w-full bg-slate-700/50 border border-slate-600/50 rounded-lg px-3 py-2 text-sm text-white" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Empleado (nombre)</label>
+                  <input type="text" value={alertaUsuario} placeholder="Ej: María"
+                    onChange={e => setAlertaUsuario(e.target.value)}
+                    className="w-full bg-slate-700/50 border border-slate-600/50 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600" />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Tipo de acción</label>
+                  <select value={alertaAccion} onChange={e => setAlertaAccion(e.target.value)}
+                    className="w-full bg-slate-700/50 border border-slate-600/50 rounded-lg px-3 py-2 text-sm text-white">
+                    <option value="">Todas</option>
+                    <option value="stock">Stock</option>
+                    <option value="venta">Ventas</option>
+                    <option value="turno">Turnos</option>
+                    <option value="usuario">Usuarios</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <button onClick={() => cargarAlertas()}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-all">
+                  Buscar
+                </button>
+                <button onClick={() => {
+                  setAlertaFecha(''); setAlertaHoraDesde(''); setAlertaHoraHasta('')
+                  setAlertaUsuario(''); setAlertaAccion('')
+                  cargarAlertas({ fecha:'', hora_desde:'', hora_hasta:'', usuario_nombre:'', accion:'' })
+                }} className="text-slate-400 hover:text-white text-xs px-3 py-2 rounded-lg border border-slate-600/50 transition-all">
+                  Limpiar
+                </button>
+                {alertaFecha && (
+                  <span className="text-xs text-indigo-400 ml-1">
+                    {alertas.length} resultado{alertas.length !== 1 ? 's' : ''} encontrado{alertas.length !== 1 ? 's' : ''}
+                  </span>
+                )}
+                {!alertaFecha && (
+                  <span className="text-xs text-slate-600">Mostrando últimos 100 movimientos</span>
+                )}
+              </div>
             </div>
+
+            {/* Lista */}
             {alertas.length === 0 && !loading && (
-              <div className="text-center text-slate-600 py-16 text-sm">Sin alertas registradas</div>
+              <div className="text-center text-slate-600 py-16 text-sm">Sin movimientos para los filtros seleccionados</div>
             )}
             {alertas.map(a => (
-              <div key={a.id} className="bg-slate-800/50 border border-slate-700/40 rounded-xl px-4 py-3 flex items-start gap-3">
+              <div key={a.id} className={`border rounded-xl px-4 py-3 flex items-start gap-3 ${
+                a.accion.includes('stock') ? 'bg-amber-950/20 border-amber-800/30' : 'bg-slate-800/50 border-slate-700/40'
+              }`}>
                 <span className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
                   a.accion.includes('stock')   ? 'bg-amber-400' :
                   a.accion.includes('venta')   ? 'bg-green-400' :
@@ -587,7 +665,7 @@ export default function Reportes() {
                   </div>
                   <p className="text-slate-400 text-xs mt-0.5">{a.detalle}</p>
                 </div>
-                <span className="text-xs text-slate-600 shrink-0 whitespace-nowrap">
+                <span className="text-xs text-slate-500 shrink-0 whitespace-nowrap font-mono">
                   {new Date(a.fecha).toLocaleString('es-AR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit', timeZone: 'America/Argentina/Buenos_Aires' })}
                 </span>
               </div>
