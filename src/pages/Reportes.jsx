@@ -39,13 +39,17 @@ export default function Reportes() {
   const [alertaHoraHasta, setAlertaHoraHasta]   = useState('')
   const [alertaUsuario, setAlertaUsuario]       = useState('')
   const [alertaAccion, setAlertaAccion]         = useState('')
+  const [usuarios, setUsuarios]                 = useState([])
   const [modalStock, setModalStock] = useState(null)
   const [nuevoStock, setNuevoStock] = useState('')
   const [motivoStock, setMotivoStock] = useState('')
   const [toastMsg, setToastMsg]     = useState(null)
   const [turnoExpandido, setTurnoExpandido] = useState(null)
 
-  useEffect(() => { cargarSolicitudes() }, [])
+  useEffect(() => {
+    cargarSolicitudes()
+    api.get('/usuarios').then(r => setUsuarios(r.data)).catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (tab === TAB.HOY)       cargarHoy()
@@ -597,10 +601,14 @@ export default function Reportes() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-slate-500 mb-1">Empleado (nombre)</label>
-                  <input type="text" value={alertaUsuario} placeholder="Ej: María"
-                    onChange={e => setAlertaUsuario(e.target.value)}
-                    className="w-full bg-slate-700/50 border border-slate-600/50 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600" />
+                  <label className="block text-xs text-slate-500 mb-1">Empleado</label>
+                  <select value={alertaUsuario} onChange={e => setAlertaUsuario(e.target.value)}
+                    className="w-full bg-slate-700/50 border border-slate-600/50 rounded-lg px-3 py-2 text-sm text-white">
+                    <option value="">Todos</option>
+                    {usuarios.map(u => (
+                      <option key={u.id} value={u.id}>{u.nombre} ({u.username})</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs text-slate-500 mb-1">Tipo de acción</label>
