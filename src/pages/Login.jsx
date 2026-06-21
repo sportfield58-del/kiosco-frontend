@@ -324,13 +324,6 @@ export default function Login() {
             </button>
           </form>
 
-          {/* Hint */}
-          <div style={{
-            marginTop: '20px', textAlign: 'center',
-            fontSize: '0.72rem', color: 'rgba(245,245,240,0.2)'
-          }}>
-            Primera vez: admin / admin123
-          </div>
         </div>
 
         {/* Footer FMCODE */}
