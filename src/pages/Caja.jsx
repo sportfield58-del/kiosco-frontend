@@ -42,7 +42,8 @@ export default function Caja() {
   // Consumos
   const [modoConsumo, setModoConsumo] = useState(null) // null | 'empleado' | 'dueno'
   const [motivoDueno, setMotivoDueno] = useState('consumo propio')
-  const inputRef = useRef()
+  const inputRef  = useRef()
+  const idemKeyRef = useRef(null)
 
   const esDueno = ['admin','dueño'].includes(user?.rol)
 
@@ -179,12 +180,18 @@ export default function Caja() {
       mostrarToast('El monto recibido es menor al total', 'error'); return
     }
 
+    // Generar key de idempotencia solo si es un intento nuevo (no reintento)
+    if (!idemKeyRef.current) {
+      idemKeyRef.current = `vta-${user.id}-${Date.now()}`
+    }
+
     setCargando(true)
     const payload = {
       usuario_id: user.id,
       items: carrito,
       total: totalCarrito,
       medio_pago: medio,
+      idempotency_key: idemKeyRef.current,
       ...(medio === 'mixto' && { monto_efectivo: montoEfNum, monto_mp: montoMPNum })
     }
     try {
@@ -199,9 +206,21 @@ export default function Caja() {
         else mostrarToast(`Cobrado $${totalConRecargo.toFixed(2)} en ${labelMedio(medio)}`, 'ok')
         if (turno) cargarVentas(turno.id)
       }
+      idemKeyRef.current = null  // Limpiar key: cobro exitoso
       setCarrito([]); setMontoRecibido(''); setMontoEfectivo(''); setMontoMP('')
     } catch (e) {
-      mostrarToast(e.response?.data?.detail || 'Error al registrar', 'error')
+      if (e.response) {
+        // Error del negocio (stock insuficiente, etc.) → nueva key para el próximo intento
+        idemKeyRef.current = null
+        mostrarToast(e.response?.data?.detail || 'Error al registrar', 'error')
+      } else {
+        // Error de red/timeout → conservar la key para que el reintento no duplique
+        if (medio === 'mercadopago' || medio === 'mixto') {
+          mostrarToast('Sin conexión. Verificá si la venta se registró antes de volver a cobrar con MP.', 'warn')
+        } else {
+          mostrarToast('Error de conexión. Podés reintentar.', 'error')
+        }
+      }
     } finally {
       setCargando(false); inputRef.current?.focus()
     }
@@ -265,7 +284,7 @@ export default function Caja() {
 
   const mostrarToast = (texto, tipo) => {
     setToast({ texto, tipo })
-    setTimeout(() => setToast(null), 3500)
+    setTimeout(() => setToast(null), tipo === 'warn' ? 7000 : 3500)
   }
 
   const labelMedio = (id) => ({ efectivo:'Efectivo', tarjeta:'Tarjeta', mercadopago:'Mercado Pago', mixto:'Mixto' })[id] || id
@@ -443,10 +462,12 @@ export default function Caja() {
   return (
     <div className="flex h-full">
       {toast && (
-        <div className={`fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium shadow-2xl animate-fade-in ${
-          toast.tipo === 'ok' ? 'bg-green-900/90 border border-green-700/50 text-green-300' : 'bg-red-900/90 border border-red-700/50 text-red-300'
+        <div className={`fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium shadow-2xl animate-fade-in max-w-xs ${
+          toast.tipo === 'ok'   ? 'bg-green-900/90 border border-green-700/50 text-green-300' :
+          toast.tipo === 'warn' ? 'bg-amber-900/90 border border-amber-700/50 text-amber-200' :
+                                  'bg-red-900/90 border border-red-700/50 text-red-300'
         }`}>
-          {toast.tipo === 'ok' ? <CheckCircleIcon className="w-4 h-4" /> : <ExclamationCircleIcon className="w-4 h-4" />}
+          {toast.tipo === 'ok'   ? <CheckCircleIcon className="w-4 h-4 shrink-0" /> : <ExclamationCircleIcon className="w-4 h-4 shrink-0" />}
           {toast.texto}
         </div>
       )}
