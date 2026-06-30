@@ -4,7 +4,8 @@ import { useAuth } from '../context/AuthContext'
 import {
   ArrowUpTrayIcon, PlusIcon, MagnifyingGlassIcon,
   ExclamationTriangleIcon, PencilIcon, CheckIcon, XMarkIcon,
-  LockClosedIcon, ChevronDownIcon, ChevronUpIcon
+  LockClosedIcon, ChevronDownIcon, ChevronUpIcon, TrashIcon,
+  Square2StackIcon
 } from '@heroicons/react/24/outline'
 
 export default function Stock() {
@@ -19,6 +20,10 @@ export default function Stock() {
   const [editando, setEditando]   = useState(null)
   const [mostrarAlertas, setMostrarAlertas] = useState(false)
   const [exportando, setExportando] = useState(false)
+  const [duplicados, setDuplicados] = useState([])
+  const [mostrarDuplicados, setMostrarDuplicados] = useState(false)
+  const [grupoFusion, setGrupoFusion] = useState(null)
+  const [principalFusion, setPrincipalFusion] = useState(null)
   const fileRef = useRef()
 
   const [form, setForm] = useState({
@@ -55,8 +60,50 @@ export default function Stock() {
     try {
       const res = await api.get('/productos')
       setProductos(res.data)
+      cargarDuplicados()
     } catch { mostrarToast('Error al cargar productos', 'error') }
     finally { setLoading(false) }
+  }
+
+  const cargarDuplicados = async () => {
+    try {
+      const res = await api.get('/productos/duplicados')
+      setDuplicados(res.data)
+    } catch {}
+  }
+
+  const eliminarProducto = async (p) => {
+    if (!confirm(`¿Eliminar "${p.nombre}" (código ${p.codigo_barra})?\nStock actual: ${p.stock} unidades.\nEsta acción no se puede deshacer.`)) return
+    try {
+      await api.delete(`/productos/${p.id}?usuario_id=${user.id}`)
+      mostrarToast('Producto eliminado', 'ok')
+      cargar()
+    } catch (e) {
+      mostrarToast(e.response?.data?.detail || 'Error al eliminar', 'error')
+    }
+  }
+
+  const abrirFusion = (grupo) => {
+    setGrupoFusion(grupo)
+    // Por defecto sugiere mantener el que tiene más stock
+    const sugerido = [...grupo.productos].sort((a, b) => b.stock - a.stock)[0]
+    setPrincipalFusion(sugerido.id)
+  }
+
+  const confirmarFusion = async () => {
+    if (!grupoFusion || !principalFusion) return
+    try {
+      const res = await api.post('/productos/fusionar', {
+        principal_id: principalFusion,
+        ids: grupoFusion.productos.map(p => p.id),
+        usuario_id: user.id
+      })
+      mostrarToast(`✓ Fusionado — stock final: ${res.data.stock_final} unidades`, 'ok')
+      setGrupoFusion(null); setPrincipalFusion(null)
+      cargar()
+    } catch (e) {
+      mostrarToast(e.response?.data?.detail || 'Error al fusionar', 'error')
+    }
   }
 
   const productos_filtrados = productos.filter(p =>
@@ -277,6 +324,13 @@ export default function Stock() {
                           title="Ajustar stock">
                           ±
                         </button>
+                        {esDueno && (
+                          <button onClick={() => eliminarProducto(p)}
+                            className="p-1.5 rounded-lg hover:bg-red-900/50 text-slate-400 hover:text-red-400 transition-all"
+                            title="Eliminar producto">
+                            <TrashIcon className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   )}
@@ -289,6 +343,45 @@ export default function Stock() {
           </table>
         )}
       </div>
+
+      {/* ── DUPLICADOS — productos cargados más de una vez ── */}
+      {esDueno && duplicados.length > 0 && (
+        <div className="flex-shrink-0 border-t border-red-800/30">
+          <button
+            onClick={() => setMostrarDuplicados(v => !v)}
+            className="w-full flex items-center justify-between px-4 py-2.5 bg-red-950/40 hover:bg-red-950/60 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <Square2StackIcon className="w-4 h-4 text-red-400" />
+              <span className="text-red-400 text-sm font-semibold">
+                {duplicados.length} producto{duplicados.length > 1 ? 's' : ''} cargado{duplicados.length > 1 ? 's' : ''} repetido{duplicados.length > 1 ? 's' : ''} — stock fragmentado
+              </span>
+            </div>
+            {mostrarDuplicados
+              ? <ChevronDownIcon className="w-4 h-4 text-red-500" />
+              : <ChevronUpIcon className="w-4 h-4 text-red-500" />
+            }
+          </button>
+          {mostrarDuplicados && (
+            <div className="bg-red-950/30 px-4 pb-3 pt-1 space-y-2 max-h-56 overflow-auto">
+              {duplicados.map((grupo, i) => (
+                <div key={i} className="flex items-center justify-between bg-slate-800/60 rounded-lg px-3 py-2">
+                  <div>
+                    <p className="text-white text-sm font-medium">{grupo.nombre}</p>
+                    <p className="text-red-300 text-xs">
+                      {grupo.productos.length} cargas · stock total real: {grupo.stock_total} unidades
+                    </p>
+                  </div>
+                  <button onClick={() => abrirFusion(grupo)}
+                    className="bg-red-600 hover:bg-red-500 text-white text-xs px-3 py-1.5 rounded-lg transition-all font-medium shrink-0">
+                    Fusionar
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── ALERTAS STOCK BAJO — abajo, colapsable ── */}
       {alertas.length > 0 && (
@@ -367,6 +460,55 @@ export default function Stock() {
               <button onClick={guardar}
                 className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 rounded-xl text-sm transition-all flex items-center justify-center gap-2">
                 <CheckIcon className="w-4 h-4" /> Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL FUSIONAR DUPLICADOS ── */}
+      {grupoFusion && (
+        <div className="fixed inset-0 bg-black/70 z-40 flex items-center justify-center p-4">
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-lg animate-fade-in">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-lg font-bold text-white">Fusionar "{grupoFusion.nombre}"</h3>
+              <button onClick={() => { setGrupoFusion(null); setPrincipalFusion(null) }} className="text-slate-400 hover:text-white">
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-slate-400 text-sm mb-4">
+              Elegí qué código de barra vas a seguir usando. El stock de los demás se suma a ese y los otros se eliminan.
+            </p>
+            <div className="space-y-2 mb-4 max-h-64 overflow-auto">
+              {grupoFusion.productos.map(p => (
+                <label key={p.id}
+                  className={`flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 cursor-pointer border transition-all ${
+                    principalFusion === p.id ? 'bg-indigo-900/40 border-indigo-600' : 'bg-slate-700/40 border-slate-600/40'
+                  }`}>
+                  <div className="flex items-center gap-3">
+                    <input type="radio" name="principal" checked={principalFusion === p.id}
+                      onChange={() => setPrincipalFusion(p.id)} />
+                    <div>
+                      <p className="text-white text-sm font-medium">Código: {p.codigo_barra}</p>
+                      <p className="text-slate-400 text-xs">${p.precio_venta.toFixed(2)} · stock minimo {p.stock_minimo}</p>
+                    </div>
+                  </div>
+                  <span className="text-indigo-400 font-bold font-mono">{p.stock} u.</span>
+                </label>
+              ))}
+            </div>
+            <div className="bg-slate-700/40 rounded-lg px-3 py-2 mb-4 text-sm flex justify-between">
+              <span className="text-slate-400">Stock final tras fusionar</span>
+              <span className="text-green-400 font-bold">{grupoFusion.stock_total} unidades</span>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => { setGrupoFusion(null); setPrincipalFusion(null) }}
+                className="flex-1 border border-slate-600 text-slate-300 py-2.5 rounded-xl text-sm transition-all">
+                Cancelar
+              </button>
+              <button onClick={confirmarFusion}
+                className="flex-1 bg-red-600 hover:bg-red-500 text-white font-semibold py-2.5 rounded-xl text-sm transition-all flex items-center justify-center gap-2">
+                <CheckIcon className="w-4 h-4" /> Fusionar
               </button>
             </div>
           </div>
