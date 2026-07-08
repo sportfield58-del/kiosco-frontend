@@ -36,6 +36,22 @@ export default function Stock() {
 
   useEffect(() => { verificarAcceso() }, [])
 
+  // Auto-refresh silencioso cada 60s para que todos los terminales vean los cambios
+  useEffect(() => {
+    if (!acceso) return
+    const interval = setInterval(async () => {
+      try {
+        const [res, dup] = await Promise.all([
+          api.get('/productos'),
+          api.get('/productos/duplicados')
+        ])
+        setProductos(res.data)
+        setDuplicados(dup.data)
+      } catch {}
+    }, 60000)
+    return () => clearInterval(interval)
+  }, [acceso])
+
   const verificarAcceso = async () => {
     if (esDueno) { setAcceso(true); cargar(); return }
     try {
@@ -114,9 +130,38 @@ export default function Stock() {
   const alertas = productos.filter(p => p.stock_bajo)
 
   const guardar = async () => {
+    // Validaciones antes de enviar
+    if (!form.nombre.trim()) {
+      mostrarToast('El nombre del producto es obligatorio', 'error'); return
+    }
+    if (!form.precio_venta || parseFloat(form.precio_venta) <= 0) {
+      mostrarToast('El precio de venta debe ser mayor a 0', 'error'); return
+    }
+    if (!form.codigo_barra.trim() && !editando) {
+      if (!window.confirm('No ingresaste código de barra. El producto no se podrá escanear desde Caja.\n¿Continuás igual?')) return
+    }
+
+    // Aviso si ya existe un producto con nombre muy similar (solo al crear)
+    if (!editando) {
+      const nombreNorm = form.nombre.trim().toLowerCase()
+      const similar = productos.find(p => {
+        const pNorm = p.nombre.trim().toLowerCase()
+        return pNorm === nombreNorm || pNorm.includes(nombreNorm) || nombreNorm.includes(pNorm)
+      })
+      if (similar) {
+        if (!window.confirm(
+          `Ya existe "${similar.nombre}" con ${similar.stock} unidades de stock.\n\n` +
+          `¿Seguro que querés crear uno nuevo?\n` +
+          `Si es el mismo producto, mejor usá el botón ± para ajustar el stock del existente.`
+        )) return
+      }
+    }
+
     try {
       const datos = {
         ...form,
+        codigo_barra: form.codigo_barra.trim(),
+        nombre: form.nombre.trim(),
         precio_costo: parseFloat(form.precio_costo) || 0,
         precio_venta: parseFloat(form.precio_venta),
         stock: parseInt(form.stock) || 0,
@@ -127,12 +172,12 @@ export default function Stock() {
         await api.put(`/productos/${editando.id}`, datos)
         mostrarToast('Producto actualizado', 'ok')
       } else {
-        await api.post('/productos', datos)
-        mostrarToast('Producto creado', 'ok')
+        const res = await api.post('/productos', datos)
+        mostrarToast(res.data.reactivado ? 'Producto reactivado y actualizado' : 'Producto creado', 'ok')
       }
       cerrarModal(); cargar()
     } catch (e) {
-      mostrarToast(e.response?.data?.detail || 'Error', 'error')
+      mostrarToast(e.response?.data?.detail || 'Error al guardar', 'error')
     }
   }
 
