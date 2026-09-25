@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import api, { encolarOffline } from '../api'
 import { useAuth } from '../context/AuthContext'
 import { useOffline } from '../hooks/useOffline'
+import { useRefrescoAutomatico } from '../hooks/useRefrescoAutomatico'
 import {
   TrashIcon, BanknotesIcon, CreditCardIcon,
   ArrowPathIcon, CheckCircleIcon, ExclamationCircleIcon,
@@ -42,12 +43,17 @@ export default function Caja() {
   // Consumos
   const [modoConsumo, setModoConsumo] = useState(null) // null | 'empleado' | 'dueno'
   const [motivoDueno, setMotivoDueno] = useState('consumo propio')
+  const [verTurnoMovil, setVerTurnoMovil] = useState(false)
   const inputRef  = useRef()
   const idemKeyRef = useRef(null)
 
   const esDueno = ['admin','dueño'].includes(user?.rol)
 
   useEffect(() => { cargarTurno(); cargarProductos(); verificarRecargoNocturno() }, [])
+
+  // Stock y turno pueden cambiar desde otro dispositivo (ingreso de mercadería, cierre desde el celular):
+  // se releen cada minuto y apenas se vuelve a la app, sin depender de la caché.
+  useRefrescoAutomatico(() => { cargarProductos(); if (!resumenCierre) cargarTurno() }, { activo: !offline })
   useEffect(() => {
     const intervalo = setInterval(verificarRecargoNocturno, 5 * 60 * 1000)
     return () => clearInterval(intervalo)
@@ -205,6 +211,7 @@ export default function Caja() {
         else if (medio === 'efectivo' && vuelto > 0) mostrarToast(`Vuelto: $${vuelto.toFixed(2)}`, 'ok')
         else mostrarToast(`Cobrado $${totalConRecargo.toFixed(2)} en ${labelMedio(medio)}`, 'ok')
         if (turno) cargarVentas(turno.id)
+        cargarProductos()  // el stock cambió con esta venta
       }
       idemKeyRef.current = null  // Limpiar key: cobro exitoso
       setCarrito([]); setMontoRecibido(''); setMontoEfectivo(''); setMontoMP('')
@@ -213,6 +220,7 @@ export default function Caja() {
         // Error del negocio (stock insuficiente, etc.) → nueva key para el próximo intento
         idemKeyRef.current = null
         mostrarToast(e.response?.data?.detail || 'Error al registrar', 'error')
+        cargarProductos()  // p. ej. "stock insuficiente": la lista local estaba desactualizada
       } else {
         // Error de red/timeout → conservar la key para que el reintento no duplique
         if (medio === 'mercadopago' || medio === 'mixto') {
@@ -474,7 +482,7 @@ export default function Caja() {
 
       {/* Modal cierre */}
       {modalCierre && (
-        <div className="fixed inset-0 bg-black/70 z-40 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
           <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-sm animate-fade-in">
             <h3 className="text-lg font-bold text-white mb-1">Cerrar turno</h3>
             <p className="text-slate-400 text-sm mb-4">Contá el efectivo y escribí el total</p>
@@ -496,7 +504,7 @@ export default function Caja() {
               })}
             </div>
             <label className="block text-xs text-slate-400 mb-1.5">Efectivo contado en caja ($)</label>
-            <input type="number" className="w-full mb-4" placeholder="0.00"
+            <input type="number" inputMode="decimal" className="w-full mb-4" placeholder="0.00"
               value={montoCierre} onChange={e => setMontoCierre(e.target.value)} autoFocus />
             <div className="flex gap-3">
               <button onClick={() => setModalCierre(false)}
@@ -514,7 +522,7 @@ export default function Caja() {
       <div className="flex-1 flex flex-col p-4 gap-3 min-w-0">
 
         {/* Header turno */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-base font-bold text-white capitalize">
               Turno {turno?.tipo}
@@ -522,11 +530,11 @@ export default function Caja() {
             </h2>
             <p className="text-xs text-slate-500">{user?.nombre}</p>
           </div>
-          <div className="flex gap-2 items-center">
+          <div className="flex flex-wrap gap-2 items-center">
             {/* Botón consumo empleado */}
             <button
               onClick={() => setModoConsumo(modoConsumo === 'empleado' ? null : 'empleado')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              className={`flex items-center gap-1.5 px-3 py-2 lg:px-2.5 lg:py-1.5 rounded-lg text-xs font-semibold transition-all ${
                 modoConsumo === 'empleado'
                   ? 'bg-amber-600 text-white'
                   : 'border border-slate-600 text-slate-400 hover:text-amber-400 hover:border-amber-600'
@@ -538,7 +546,7 @@ export default function Caja() {
             {esDueno && (
               <button
                 onClick={() => setModoConsumo(modoConsumo === 'dueno' ? null : 'dueno')}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                className={`flex items-center gap-1.5 px-3 py-2 lg:px-2.5 lg:py-1.5 rounded-lg text-xs font-semibold transition-all ${
                   modoConsumo === 'dueno'
                     ? 'bg-purple-600 text-white'
                     : 'border border-slate-600 text-slate-400 hover:text-purple-400 hover:border-purple-600'
@@ -548,10 +556,27 @@ export default function Caja() {
               </button>
             )}
             <button onClick={() => setModalCierre(true)}
-              className="text-xs border border-red-800/50 hover:bg-red-950/50 text-red-400 px-3 py-1.5 rounded-lg transition-all">
+              className="text-xs border border-red-800/50 hover:bg-red-950/50 text-red-400 px-3 py-2 lg:py-1.5 rounded-lg transition-all">
               Cerrar turno
             </button>
           </div>
+        </div>
+
+        {/* Resumen del turno para pantallas chicas (en las grandes va en el panel lateral) */}
+        <div className="lg:hidden">
+          <button onClick={() => setVerTurnoMovil(v => !v)} aria-expanded={verTurnoMovil}
+            className="w-full flex items-center justify-between gap-2 bg-slate-800 border border-slate-700/50 rounded-xl px-4 py-2.5 text-sm">
+            <span className="text-slate-300">Este turno · {ventasTurno.length} venta{ventasTurno.length === 1 ? '' : 's'}</span>
+            <span className="flex items-center gap-2">
+              <span className="text-indigo-400 font-semibold font-mono">${totalTurno.toFixed(2)}</span>
+              {verTurnoMovil ? <ChevronUpIcon className="w-4 h-4 text-slate-400" /> : <ChevronDownIcon className="w-4 h-4 text-slate-400" />}
+            </span>
+          </button>
+          {verTurnoMovil && (
+            <div className="mt-2 bg-slate-800/50 border border-slate-700/40 rounded-xl p-3 flex flex-col">
+              <PanelTurno ventasTurno={ventasTurno} totalTurno={totalTurno} porMedioTurno={porMedioTurno} compacto />
+            </div>
+          )}
         </div>
 
         {/* Banner modo consumo */}
@@ -608,7 +633,7 @@ export default function Caja() {
           {mostrarSugerencias && sugerencias.length > 0 && (
             <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-slate-800 border border-slate-600 rounded-xl overflow-hidden shadow-2xl">
               {sugerencias.map(p => (
-                <button key={p.id} onMouseDown={() => agregarProducto(p)}
+                <button key={p.id} onPointerDown={(e) => { e.preventDefault(); agregarProducto(p) }}
                   className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-700 transition-colors text-left border-b border-slate-700/50 last:border-0">
                   <div>
                     <p className="text-white text-sm font-medium">{p.nombre}</p>
@@ -622,7 +647,7 @@ export default function Caja() {
         </div>
 
         {/* Carrito */}
-        <div className="flex-1 overflow-auto space-y-1.5">
+        <div className="flex-1 min-h-[9rem] overflow-auto space-y-1.5">
           {carrito.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-slate-600 gap-2">
               <div className="text-4xl">🛒</div>
@@ -636,7 +661,7 @@ export default function Caja() {
                 'bg-slate-800/80 border-slate-700/40'
               }`}>
               <div className="flex-1 min-w-0">
-                <p className="text-white text-sm font-medium truncate">{item.nombre}</p>
+                <p className="text-white text-sm font-medium leading-tight line-clamp-2">{item.nombre}</p>
                 <p className="text-slate-400 text-xs">
                   ${item.precio_unitario.toFixed(2)} c/u
                   {modoConsumo === 'empleado' && (
@@ -646,10 +671,10 @@ export default function Caja() {
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={() => cambiarCantidad(item.producto_id, -1)}
-                  className="w-7 h-7 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-sm flex items-center justify-center transition-all">−</button>
+                  className="w-9 h-9 lg:w-7 lg:h-7 rounded-lg bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-white text-base flex items-center justify-center transition-all">−</button>
                 <span className="text-white font-mono text-sm w-5 text-center">{item.cantidad}</span>
                 <button onClick={() => cambiarCantidad(item.producto_id, 1)}
-                  className="w-7 h-7 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-sm flex items-center justify-center transition-all">+</button>
+                  className="w-9 h-9 lg:w-7 lg:h-7 rounded-lg bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-white text-base flex items-center justify-center transition-all">+</button>
               </div>
               <span className={`font-semibold text-sm w-20 text-right ${
                 modoConsumo === 'empleado' ? 'text-amber-400' :
@@ -657,7 +682,7 @@ export default function Caja() {
                 'text-indigo-400'
               }`}>${item.subtotal.toFixed(2)}</span>
               <button onClick={() => setCarrito(p => p.filter(i => i.producto_id !== item.producto_id))}
-                className="text-slate-600 hover:text-red-400 transition-colors ml-1">
+                className="text-slate-500 hover:text-red-400 transition-colors p-1.5 -mr-1.5" aria-label={`Quitar ${item.nombre}`}>
                 <TrashIcon className="w-4 h-4" />
               </button>
             </div>
@@ -717,7 +742,7 @@ export default function Caja() {
           {/* Efectivo normal */}
           {medio === 'efectivo' && modoConsumo === null && carrito.length > 0 && (
             <div className="space-y-2">
-              <input type="number" placeholder="Monto recibido ($)..."
+              <input type="number" inputMode="decimal" placeholder="Monto recibido ($)..."
                 value={montoRecibido} onChange={e => setMontoRecibido(e.target.value)} className="w-full" />
               {montoNum > 0 && montoNum >= totalConRecargo && (
                 <div className="flex justify-between items-center bg-green-950/50 border border-green-800/40 rounded-xl px-4 py-2.5">
@@ -740,12 +765,12 @@ export default function Caja() {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">Efectivo ($)</label>
-                  <input type="number" placeholder="0.00" value={montoEfectivo}
+                  <input type="number" inputMode="decimal" placeholder="0.00" value={montoEfectivo}
                     onChange={e => setMontoEfectivo(e.target.value)} className="w-full" />
                 </div>
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">Mercado Pago ($)</label>
-                  <input type="number" placeholder="0.00" value={montoMP}
+                  <input type="number" inputMode="decimal" placeholder="0.00" value={montoMP}
                     onChange={e => setMontoMP(e.target.value)} className="w-full" />
                 </div>
               </div>
@@ -790,54 +815,68 @@ export default function Caja() {
         </div>
       </div>
 
-      {/* Panel derecho */}
-      <div className="w-64 bg-slate-800/50 border-l border-slate-700/50 flex flex-col p-3">
-        <div className="flex items-center justify-between mb-3 px-1">
-          <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Este turno</h3>
-          <span className="text-xs text-indigo-400 font-semibold">${totalTurno.toFixed(2)}</span>
-        </div>
-        <div className="flex-1 overflow-auto space-y-1.5">
-          {ventasTurno.length === 0
-            ? <p className="text-slate-600 text-xs text-center mt-8">Sin ventas aún</p>
-            : [...ventasTurno].reverse().map(v => (
-              <div key={v.id} className="bg-slate-700/40 rounded-lg px-3 py-2">
-                <div className="flex justify-between items-start">
-                  <span className="text-white text-xs font-medium">${v.total.toFixed(2)}</span>
-                  <span className={`text-xs ${v.medio_pago === 'mixto' ? 'text-orange-400' : 'text-slate-500'}`}>
-                    {labelMedio(v.medio_pago)}
-                  </span>
+      {/* Panel derecho: solo en pantallas grandes (en el celular se abre desde "Este turno") */}
+      <aside className="hidden lg:flex w-64 bg-slate-800/50 border-l border-slate-700/50 flex-col p-3">
+        <PanelTurno ventasTurno={ventasTurno} totalTurno={totalTurno} porMedioTurno={porMedioTurno} />
+      </aside>
+    </div>
+  )
+}
+
+const LABEL_MEDIO = { efectivo: 'Efectivo', tarjeta: 'Tarjeta', mercadopago: 'Mercado Pago', mixto: 'Mixto' }
+const horaCorta = (fecha) => new Date(fecha).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })
+
+// Ventas del turno en curso + totales por medio de pago (se usa en el panel lateral y en el desplegable del celular)
+function PanelTurno({ ventasTurno, totalTurno, porMedioTurno, compacto = false }) {
+  const labelMedio = (id) => LABEL_MEDIO[id] || id
+  const formatHora = horaCorta
+  return (
+    <>
+      <div className="flex items-center justify-between mb-3 px-1">
+        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Este turno</h3>
+        <span className="text-xs text-indigo-400 font-semibold">${totalTurno.toFixed(2)}</span>
+      </div>
+      <div className={`space-y-1.5 overflow-auto ${compacto ? 'max-h-52' : 'flex-1'}`}>
+        {ventasTurno.length === 0
+          ? <p className="text-slate-600 text-xs text-center mt-8">Sin ventas aún</p>
+          : [...ventasTurno].reverse().map(v => (
+            <div key={v.id} className="bg-slate-700/40 rounded-lg px-3 py-2">
+              <div className="flex justify-between items-start">
+                <span className="text-white text-xs font-medium">${v.total.toFixed(2)}</span>
+                <span className={`text-xs ${v.medio_pago === 'mixto' ? 'text-orange-400' : 'text-slate-500'}`}>
+                  {labelMedio(v.medio_pago)}
+                </span>
+              </div>
+              {v.items?.length > 0 && (
+                <div className="mt-1 space-y-0.5">
+                  {v.items.map((item, i) => (
+                    <p key={i} className="text-slate-500 text-xs truncate">· {item.nombre} x{item.cantidad}</p>
+                  ))}
                 </div>
-                {v.items?.length > 0 && (
-                  <div className="mt-1 space-y-0.5">
-                    {v.items.map((item, i) => (
-                      <p key={i} className="text-slate-500 text-xs truncate">· {item.nombre} x{item.cantidad}</p>
-                    ))}
-                  </div>
-                )}
-                <p className="text-slate-600 text-xs mt-0.5">{formatHora(v.fecha)}</p>
-              </div>
-            ))
-          }
-        </div>
-        <div className="pt-3 border-t border-slate-700/50 mt-2 space-y-1">
-          {['efectivo','tarjeta','mercadopago','mixto'].map(m => {
-            const val = porMedioTurno[m] || 0
-            if (!val) return null
-            const colors = { efectivo:'text-green-300', tarjeta:'text-blue-300', mercadopago:'text-cyan-300', mixto:'text-orange-300' }
-            return (
-              <div key={m} className="flex justify-between text-xs">
-                <span className="text-slate-500">{labelMedio(m)}</span>
-                <span className={`font-mono ${colors[m]}`}>${val.toFixed(2)}</span>
-              </div>
-            )
-          })}
-          <div className="flex justify-between text-xs pt-1 border-t border-slate-700/30">
-            <span className="text-slate-500">Ventas</span>
-            <span className="text-slate-300">{ventasTurno.length}</span>
-          </div>
+              )}
+              <p className="text-slate-600 text-xs mt-0.5">{formatHora(v.fecha)}</p>
+            </div>
+          ))
+        }
+      </div>
+      <div className="pt-3 border-t border-slate-700/50 mt-2 space-y-1">
+        {['efectivo','tarjeta','mercadopago','mixto'].map(m => {
+          const val = porMedioTurno[m] || 0
+          if (!val) return null
+          const colors = { efectivo:'text-green-300', tarjeta:'text-blue-300', mercadopago:'text-cyan-300', mixto:'text-orange-300' }
+          return (
+            <div key={m} className="flex justify-between text-xs">
+              <span className="text-slate-500">{labelMedio(m)}</span>
+              <span className={`font-mono ${colors[m]}`}>${val.toFixed(2)}</span>
+            </div>
+          )
+        })}
+        <div className="flex justify-between text-xs pt-1 border-t border-slate-700/30">
+          <span className="text-slate-500">Ventas</span>
+          <span className="text-slate-300">{ventasTurno.length}</span>
         </div>
       </div>
-    </div>
+    </>
   )
 }
 

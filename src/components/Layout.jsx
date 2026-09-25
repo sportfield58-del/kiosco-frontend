@@ -2,6 +2,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useOffline } from '../hooks/useOffline'
+import { useMediaQuery } from '../hooks/useMediaQuery'
 import api from '../api'
 import {
   ShoppingCartIcon, CubeIcon, ChartBarIcon,
@@ -12,6 +13,8 @@ export default function Layout() {
   const { user, logout } = useAuth()
   const { offline, pendientes, sincronizando } = useOffline()
   const navigate = useNavigate()
+  // Se monta UNA sola versión (antes ambas quedaban montadas y ocultas por CSS, duplicando cada pantalla y sus pedidos al servidor)
+  const esDesktop = useMediaQuery('(min-width: 768px)')
 
   const handleLogout = () => { logout(); navigate('/login') }
 
@@ -74,7 +77,7 @@ export default function Layout() {
       )}
 
       {/* Layout desktop */}
-      <div className="hidden md:flex flex-1 overflow-hidden">
+      {esDesktop && <div className="flex flex-1 overflow-hidden">
         {/* Sidebar desktop */}
         <aside className="w-52 bg-slate-800 border-r border-slate-700/50 flex flex-col p-3 gap-1 shrink-0">
           <div className="px-2 py-3 mb-2">
@@ -127,10 +130,10 @@ export default function Layout() {
         <main className="flex-1 overflow-auto">
           <Outlet />
         </main>
-      </div>
+      </div>}
 
       {/* Layout mobile */}
-      <div className="flex md:hidden flex-col flex-1 overflow-hidden">
+      {!esDesktop && <div className="flex flex-col flex-1 overflow-hidden">
         {/* Header mobile */}
         <header className="bg-slate-800 border-b border-slate-700/50 px-4 py-3 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2">
@@ -181,7 +184,7 @@ export default function Layout() {
             </NavLink>
           </>}
         </nav>
-      </div>
+      </div>}
     </div>
   )
 }

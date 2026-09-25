@@ -15,7 +15,7 @@ export default defineConfig({
         theme_color: '#0f172a',
         background_color: '#0f172a',
         display: 'standalone',
-        orientation: 'landscape',
+        orientation: 'any',
         start_url: '/',
         icons: [
           { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
@@ -24,6 +24,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        cleanupOutdatedCaches: true,
         runtimeCaching: [
           {
             urlPattern: ({ url }) => url.pathname.startsWith('/productos') ||
@@ -32,7 +33,9 @@ export default defineConfig({
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',
-              networkTimeoutSeconds: 4,
+              // Sin networkTimeoutSeconds: antes, si el servidor tardaba más de 4s (celular con mala
+              // señal, servidor "dormido") se servía la respuesta cacheada y el stock aparecía viejo
+              // (p. ej. 0). Ahora la caché solo se usa si NO hay conexión de verdad.
               expiration: { maxEntries: 300, maxAgeSeconds: 24 * 60 * 60 },
               cacheableResponse: { statuses: [0, 200] }
             }

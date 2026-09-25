@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
-import api from '../api'
+import api, { mensajeError } from '../api'
 import { useAuth } from '../context/AuthContext'
+import { useRefrescoAutomatico } from '../hooks/useRefrescoAutomatico'
 import {
   ArrowUpTrayIcon, PlusIcon, MagnifyingGlassIcon,
   ExclamationTriangleIcon, PencilIcon, CheckIcon, XMarkIcon,
   LockClosedIcon, ChevronDownIcon, ChevronUpIcon, TrashIcon,
-  Square2StackIcon
+  Square2StackIcon, PlusCircleIcon
 } from '@heroicons/react/24/outline'
 
 export default function Stock() {
@@ -24,7 +25,10 @@ export default function Stock() {
   const [mostrarDuplicados, setMostrarDuplicados] = useState(false)
   const [grupoFusion, setGrupoFusion] = useState(null)
   const [principalFusion, setPrincipalFusion] = useState(null)
+  const [guardando, setGuardando] = useState(false)
+  const [ingreso, setIngreso]     = useState(null)   // { producto, cantidad, nota }
   const fileRef = useRef()
+  const toastTimer = useRef()
 
   const [form, setForm] = useState({
     codigo_barra: '', nombre: '', precio_costo: '', precio_venta: '',
@@ -32,25 +36,30 @@ export default function Stock() {
   })
 
   const esDueno = ['admin','dueño'].includes(user?.rol)
-  const puedeEditar = esDueno || user?.stock_habilitado === true
+  // `acceso` viene del servidor (dueño, o empleado con acceso aprobado). No usar el flag guardado
+  // en localStorage: queda viejo cuando el dueño aprueba el acceso desde otro dispositivo.
+  const puedeEditar = acceso === true
 
   useEffect(() => { verificarAcceso() }, [])
 
-  // Auto-refresh silencioso cada 60s para que todos los terminales vean los cambios
-  useEffect(() => {
-    if (!acceso) return
-    const interval = setInterval(async () => {
-      try {
-        const [res, dup] = await Promise.all([
-          api.get('/productos'),
-          api.get('/productos/duplicados')
-        ])
-        setProductos(res.data)
-        setDuplicados(dup.data)
-      } catch {}
-    }, 60000)
-    return () => clearInterval(interval)
-  }, [acceso])
+  // Refresco silencioso (cada 60s y al volver a la app) para ver cambios hechos desde otros dispositivos
+  useRefrescoAutomatico(async () => {
+    try {
+      if (!esDueno) {
+        // Re-verifica el permiso: se desbloquea solo al aprobarse y se bloquea si lo revocan
+        const permiso = await api.get(`/solicitudes/stock/acceso/${user.id}`)
+        setAcceso(permiso.data.acceso)
+        if (!permiso.data.acceso) return
+      }
+      const [res, dup] = await Promise.all([
+        api.get('/productos'),
+        esDueno ? api.get('/productos/duplicados') : Promise.resolve({ data: [] })
+      ])
+      setProductos(res.data)
+      setDuplicados(dup.data)
+      setLoading(false)   // si el acceso se acaba de aprobar, cargar() nunca corrió
+    } catch {}
+  }, { activo: acceso !== null })
 
   const verificarAcceso = async () => {
     if (esDueno) { setAcceso(true); cargar(); return }
@@ -67,7 +76,7 @@ export default function Stock() {
       setSolicitado(true)
       mostrarToast('Solicitud enviada al dueño', 'ok')
     } catch (e) {
-      mostrarToast(e.response?.data?.detail || 'Error', 'error')
+      mostrarToast(mensajeError(e, 'No se pudo enviar la solicitud'), 'error')
     }
   }
 
@@ -76,8 +85,8 @@ export default function Stock() {
     try {
       const res = await api.get('/productos')
       setProductos(res.data)
-      cargarDuplicados()
-    } catch { mostrarToast('Error al cargar productos', 'error') }
+      if (esDueno) cargarDuplicados()
+    } catch (e) { mostrarToast(mensajeError(e, 'Error al cargar productos'), 'error') }
     finally { setLoading(false) }
   }
 
@@ -95,7 +104,7 @@ export default function Stock() {
       mostrarToast('Producto eliminado', 'ok')
       cargar()
     } catch (e) {
-      mostrarToast(e.response?.data?.detail || 'Error al eliminar', 'error')
+      mostrarToast(mensajeError(e, 'Error al eliminar'), 'error')
     }
   }
 
@@ -118,7 +127,7 @@ export default function Stock() {
       setGrupoFusion(null); setPrincipalFusion(null)
       cargar()
     } catch (e) {
-      mostrarToast(e.response?.data?.detail || 'Error al fusionar', 'error')
+      mostrarToast(mensajeError(e, 'Error al fusionar'), 'error')
     }
   }
 
@@ -152,11 +161,13 @@ export default function Stock() {
         if (!window.confirm(
           `Ya existe "${similar.nombre}" con ${similar.stock} unidades de stock.\n\n` +
           `¿Seguro que querés crear uno nuevo?\n` +
-          `Si es el mismo producto, mejor usá el botón ± para ajustar el stock del existente.`
+          `Si es el mismo producto, mejor usá el botón verde (+) para ingresar la mercadería al existente.`
         )) return
       }
     }
 
+    if (guardando) return
+    setGuardando(true)
     try {
       const datos = {
         ...form,
@@ -169,15 +180,60 @@ export default function Stock() {
         usuario_id: user.id
       }
       if (editando) {
-        await api.put(`/productos/${editando.id}`, datos)
-        mostrarToast('Producto actualizado', 'ok')
+        // El stock solo se envía si el usuario lo cambió a mano. Si no, el valor de la pantalla
+        // (que puede estar desactualizado por ventas en otro dispositivo) pisaría el real.
+        if (datos.stock === editando.stock) delete datos.stock
+        const res = await api.put(`/productos/${editando.id}`, datos)
+        aplicarProductoGuardado(res.data.producto)
+        mostrarToast(`✓ "${datos.nombre}" actualizado`, 'ok')
       } else {
         const res = await api.post('/productos', datos)
-        mostrarToast(res.data.reactivado ? 'Producto reactivado y actualizado' : 'Producto creado', 'ok')
+        aplicarProductoGuardado(res.data.producto)
+        mostrarToast(
+          `✓ "${datos.nombre}" ${res.data.reactivado ? 'reactivado' : 'creado'} — stock: ${res.data.producto?.stock ?? datos.stock}`,
+          'ok'
+        )
       }
-      cerrarModal(); cargar()
+      cerrarModal()
+      cargar()   // relee desde el servidor: lo que se ve es lo que quedó guardado
     } catch (e) {
-      mostrarToast(e.response?.data?.detail || 'Error al guardar', 'error')
+      mostrarToast(mensajeError(e, 'No se pudo guardar el producto'), 'error')
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  // Refleja de inmediato en la tabla lo que el servidor confirmó, sin esperar la relectura
+  const aplicarProductoGuardado = (prod) => {
+    if (!prod) return
+    setProductos(prev => prev.some(p => p.id === prod.id)
+      ? prev.map(p => p.id === prod.id ? prod : p)
+      : [...prev, prod].sort((a, b) => a.nombre.localeCompare(b.nombre)))
+  }
+
+  const abrirIngreso = (p) => setIngreso({ producto: p, cantidad: '', nota: '' })
+
+  const confirmarIngreso = async () => {
+    const cantidad = parseInt(ingreso?.cantidad)
+    if (!cantidad || cantidad < 1) {
+      mostrarToast('Ingresá una cantidad mayor a 0', 'error'); return
+    }
+    if (guardando) return
+    setGuardando(true)
+    try {
+      const res = await api.post(`/productos/${ingreso.producto.id}/ingreso`, {
+        cantidad, nota: ingreso.nota, usuario_id: user.id
+      })
+      aplicarProductoGuardado(res.data.producto)
+      mostrarToast(
+        `✓ ${ingreso.producto.nombre}: +${res.data.cantidad} → stock ${res.data.stock_nuevo}`, 'ok'
+      )
+      setIngreso(null)
+      cargar()
+    } catch (e) {
+      mostrarToast(mensajeError(e, 'No se pudo registrar el ingreso'), 'error')
+    } finally {
+      setGuardando(false)
     }
   }
 
@@ -186,11 +242,13 @@ export default function Stock() {
     if (nuevo === null || isNaN(parseInt(nuevo))) return
     const motivo = prompt('Motivo del ajuste:') || 'ajuste manual'
     try {
-      await api.post(`/productos/ajuste-stock/${p.id}`, {
+      const res = await api.post(`/productos/ajuste-stock/${p.id}`, {
         stock_nuevo: parseInt(nuevo), motivo, usuario_id: user.id
       })
-      mostrarToast('Stock actualizado', 'ok'); cargar()
-    } catch (e) { mostrarToast(e.response?.data?.detail || 'Error', 'error') }
+      aplicarProductoGuardado(res.data.producto)
+      mostrarToast(`✓ ${p.nombre}: stock ${res.data.stock_anterior} → ${res.data.producto.stock}`, 'ok')
+      cargar()
+    } catch (e) { mostrarToast(mensajeError(e, 'No se pudo ajustar el stock'), 'error') }
   }
 
   const importarExcel = async (e) => {
@@ -204,7 +262,7 @@ export default function Stock() {
       })
       mostrarToast(`✓ ${res.data.creados} creados, ${res.data.actualizados} actualizados`, 'ok')
       cargar()
-    } catch (e) { mostrarToast(e.response?.data?.detail || 'Error al importar', 'error') }
+    } catch (e) { mostrarToast(mensajeError(e, 'Error al importar'), 'error') }
     e.target.value = ''
   }
 
@@ -245,7 +303,9 @@ export default function Stock() {
 
   const mostrarToast = (texto, tipo) => {
     setToast({ texto, tipo })
-    setTimeout(() => setToast(null), 3000)
+    clearTimeout(toastTimer.current)
+    // Los errores quedan más tiempo en pantalla: es lo que el empleado necesita poder leer
+    toastTimer.current = setTimeout(() => setToast(null), tipo === 'error' ? 6000 : 3500)
   }
 
   // ── Pantalla bloqueada ──
@@ -282,7 +342,7 @@ export default function Stock() {
   return (
     <div className="flex flex-col h-full">
       {toast && (
-        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-2xl animate-fade-in ${
+        <div role="status" className={`fixed top-4 left-4 right-4 sm:left-auto z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-2xl animate-fade-in ${
           toast.tipo === 'ok' ? 'bg-green-900/90 border border-green-700/50 text-green-300' : 'bg-red-900/90 border border-red-700/50 text-red-300'
         }`}>{toast.texto}</div>
       )}
@@ -333,45 +393,53 @@ export default function Stock() {
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-slate-900 z-10">
               <tr className="text-slate-500 text-xs uppercase tracking-wider border-b border-slate-700/50">
-                <th className="text-left pb-2 px-2">Código</th>
+                <th className="text-left pb-2 px-2 hidden md:table-cell">Código</th>
                 <th className="text-left pb-2 px-2">Nombre</th>
-                <th className="text-right pb-2 px-2">Costo</th>
-                <th className="text-right pb-2 px-2">Venta</th>
-                <th className="text-right pb-2 px-2">Gan.</th>
+                <th className="text-right pb-2 px-2 hidden md:table-cell">Costo</th>
+                <th className="text-right pb-2 px-2 hidden md:table-cell">Venta</th>
+                <th className="text-right pb-2 px-2 hidden md:table-cell">Gan.</th>
                 <th className="text-right pb-2 px-2">Stock</th>
-                <th className="text-right pb-2 px-2">Mín.</th>
-                {puedeEditar && <th className="pb-2 px-2 w-16"></th>}
+                <th className="text-right pb-2 px-2 hidden md:table-cell">Mín.</th>
+                {puedeEditar && <th className="pb-2 px-2"></th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/30">
               {productos_filtrados.map(p => (
                 <tr key={p.id} className="hover:bg-slate-800/50 transition-colors">
-                  <td className="py-2.5 px-2 text-slate-400 font-mono text-xs">{p.codigo_barra}</td>
-                  <td className="py-2.5 px-2 text-white font-medium">{p.nombre}</td>
-                  <td className="py-2.5 px-2 text-right text-slate-400">${p.precio_costo.toFixed(2)}</td>
-                  <td className="py-2.5 px-2 text-right text-white">${p.precio_venta.toFixed(2)}</td>
-                  <td className="py-2.5 px-2 text-right"><span className="text-green-400 font-medium">+{p.ganancia_pct}%</span></td>
+                  <td className="py-2.5 px-2 text-slate-400 font-mono text-xs hidden md:table-cell">{p.codigo_barra}</td>
+                  <td className="py-2.5 px-2 text-white font-medium">
+                    {p.nombre}
+                    <span className="md:hidden block text-xs font-normal text-slate-500">${p.precio_venta.toFixed(2)}</span>
+                  </td>
+                  <td className="py-2.5 px-2 text-right text-slate-400 hidden md:table-cell">${p.precio_costo.toFixed(2)}</td>
+                  <td className="py-2.5 px-2 text-right text-white hidden md:table-cell">${p.precio_venta.toFixed(2)}</td>
+                  <td className="py-2.5 px-2 text-right hidden md:table-cell"><span className="text-green-400 font-medium">+{p.ganancia_pct}%</span></td>
                   <td className="py-2.5 px-2 text-right">
                     <span className={`font-semibold font-mono ${p.stock_bajo ? 'text-amber-400' : 'text-white'}`}>{p.stock}</span>
                   </td>
-                  <td className="py-2.5 px-2 text-right text-slate-500">{p.stock_minimo}</td>
+                  <td className="py-2.5 px-2 text-right text-slate-500 hidden md:table-cell">{p.stock_minimo}</td>
                   {puedeEditar && (
                     <td className="py-2.5 px-2">
                       {/* Lápiz siempre visible — permanente hasta que el dueño cancele el acceso */}
                       <div className="flex gap-1 justify-end">
+                        <button onClick={() => abrirIngreso(p)}
+                          className="p-2 md:p-1.5 rounded-lg hover:bg-green-900/40 text-green-400 hover:text-green-300 transition-all"
+                          title="Ingresar mercadería (suma al stock)" aria-label={`Ingresar mercadería de ${p.nombre}`}>
+                          <PlusCircleIcon className="w-5 h-5 md:w-4 md:h-4" />
+                        </button>
                         <button onClick={() => abrirEditar(p)}
-                          className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-400 hover:text-white transition-all"
+                          className="p-2 md:p-1.5 rounded-lg hover:bg-slate-700 text-slate-400 hover:text-white transition-all"
                           title="Editar producto">
                           <PencilIcon className="w-3.5 h-3.5" />
                         </button>
                         <button onClick={() => ajustarStock(p)}
-                          className="p-1.5 rounded-lg hover:bg-indigo-900/50 text-slate-400 hover:text-indigo-400 transition-all text-xs font-bold"
-                          title="Ajustar stock">
+                          className="p-2 md:p-1.5 min-w-[2rem] rounded-lg hover:bg-indigo-900/50 text-slate-400 hover:text-indigo-400 transition-all text-xs font-bold"
+                          title="Corregir stock (reemplaza el valor)">
                           ±
                         </button>
                         {esDueno && (
                           <button onClick={() => eliminarProducto(p)}
-                            className="p-1.5 rounded-lg hover:bg-red-900/50 text-slate-400 hover:text-red-400 transition-all"
+                            className="p-2 md:p-1.5 rounded-lg hover:bg-red-900/50 text-slate-400 hover:text-red-400 transition-all"
                             title="Eliminar producto">
                             <TrashIcon className="w-3.5 h-3.5" />
                           </button>
@@ -456,7 +524,7 @@ export default function Stock() {
 
       {/* ── MODAL EDITAR/NUEVO ── */}
       {puedeEditar && modal && (
-        <div className="fixed inset-0 bg-black/70 z-40 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
           <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-md animate-fade-in">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-lg font-bold text-white">{editando ? 'Editar producto' : 'Nuevo producto'}</h3>
@@ -480,7 +548,7 @@ export default function Stock() {
                 <input type="number" className="w-full" value={form.precio_venta} onChange={e => setForm({...form, precio_venta: e.target.value})} />
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Stock actual</label>
+                <label className="block text-xs text-slate-400 mb-1">{editando ? 'Stock (reemplaza el valor)' : 'Stock inicial'}</label>
                 <input type="number" className="w-full" value={form.stock} onChange={e => setForm({...form, stock: e.target.value})} />
               </div>
               <div>
@@ -502,9 +570,51 @@ export default function Stock() {
             <div className="flex gap-3 mt-5">
               <button onClick={cerrarModal}
                 className="flex-1 border border-slate-600 text-slate-300 py-2.5 rounded-xl text-sm transition-all">Cancelar</button>
-              <button onClick={guardar}
-                className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 rounded-xl text-sm transition-all flex items-center justify-center gap-2">
-                <CheckIcon className="w-4 h-4" /> Guardar
+              <button onClick={guardar} disabled={guardando}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 rounded-xl text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
+                <CheckIcon className="w-4 h-4" /> {guardando ? 'Guardando...' : 'Guardar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL INGRESO DE MERCADERÍA ── */}
+      {puedeEditar && ingreso && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-sm animate-fade-in">
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-lg font-bold text-white">Ingresar mercadería</h3>
+              <button onClick={() => setIngreso(null)} className="text-slate-400 hover:text-white" aria-label="Cerrar">
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-slate-300 text-sm">{ingreso.producto.nombre}</p>
+            <div className="bg-slate-700/40 rounded-lg px-3 py-2 my-4 text-sm flex justify-between">
+              <span className="text-slate-400">Stock actual</span>
+              <span className="text-white font-bold">{ingreso.producto.stock} u.</span>
+            </div>
+            <label className="block text-xs text-slate-400 mb-1.5">Unidades que entraron</label>
+            <input type="number" inputMode="numeric" min="1" className="w-full mb-3" autoFocus
+              value={ingreso.cantidad} placeholder="Ej: 24"
+              onChange={e => setIngreso({ ...ingreso, cantidad: e.target.value })}
+              onKeyDown={e => e.key === 'Enter' && confirmarIngreso()} />
+            <label className="block text-xs text-slate-400 mb-1.5">Nota (opcional)</label>
+            <input className="w-full mb-3" value={ingreso.nota} placeholder="Ej: remito 1234, proveedor"
+              onChange={e => setIngreso({ ...ingreso, nota: e.target.value })} />
+            {parseInt(ingreso.cantidad) > 0 && (
+              <div className="bg-green-900/20 border border-green-800/30 rounded-lg px-3 py-2 mb-4 text-sm flex justify-between">
+                <span className="text-green-300">Stock después del ingreso</span>
+                <span className="text-green-400 font-bold">{ingreso.producto.stock + parseInt(ingreso.cantidad)} u.</span>
+              </div>
+            )}
+            <p className="text-slate-500 text-xs mb-4">Se suma al stock que haya al momento de guardar, aunque se hayan hecho ventas desde otro dispositivo.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setIngreso(null)}
+                className="flex-1 border border-slate-600 text-slate-300 py-2.5 rounded-xl text-sm transition-all">Cancelar</button>
+              <button onClick={confirmarIngreso} disabled={guardando}
+                className="flex-1 bg-green-600 hover:bg-green-500 text-white font-semibold py-2.5 rounded-xl text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
+                <CheckIcon className="w-4 h-4" /> {guardando ? 'Guardando...' : 'Registrar ingreso'}
               </button>
             </div>
           </div>
@@ -513,7 +623,7 @@ export default function Stock() {
 
       {/* ── MODAL FUSIONAR DUPLICADOS ── */}
       {grupoFusion && (
-        <div className="fixed inset-0 bg-black/70 z-40 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
           <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-lg animate-fade-in">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-lg font-bold text-white">Fusionar "{grupoFusion.nombre}"</h3>

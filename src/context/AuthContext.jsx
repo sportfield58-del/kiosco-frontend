@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import api, { startKeepAlive, stopKeepAlive } from '../api'
 
 const AuthContext = createContext()
@@ -7,14 +7,38 @@ export function AuthProvider({ children }) {
   const [user, setUser]     = useState(null)
   const [loading, setLoading] = useState(true)
 
+  // Trae rol / permisos actuales del servidor. La sesión de cada dispositivo es independiente
+  // (cada uno tiene su propio token), pero los permisos viven en la base: si el dueño aprobó el
+  // acceso al stock desde otro dispositivo, el usuario guardado acá quedaría desactualizado.
+  // Un fallo de red se ignora; un 401 lo maneja el interceptor de api.js.
+  const sincronizarUsuario = useCallback(async () => {
+    if (!localStorage.getItem('token')) return
+    try {
+      const res = await api.get('/me')
+      localStorage.setItem('usuario', JSON.stringify(res.data))
+      setUser(res.data)
+    } catch { /* sin conexión: se mantiene el usuario guardado */ }
+  }, [])
+
   useEffect(() => {
     const saved = localStorage.getItem('usuario')
     if (saved) {
-      setUser(JSON.parse(saved))
-      startKeepAlive()
+      try {
+        setUser(JSON.parse(saved))
+        startKeepAlive()
+        sincronizarUsuario()
+      } catch {
+        localStorage.removeItem('usuario')
+      }
     }
     setLoading(false)
-  }, [])
+  }, [sincronizarUsuario])
+
+  useEffect(() => {
+    const alVolver = () => { if (document.visibilityState === 'visible') sincronizarUsuario() }
+    document.addEventListener('visibilitychange', alVolver)
+    return () => document.removeEventListener('visibilitychange', alVolver)
+  }, [sincronizarUsuario])
 
   const login = async (username, password) => {
     const form = new FormData()

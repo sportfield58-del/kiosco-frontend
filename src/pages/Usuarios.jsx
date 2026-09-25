@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import api from '../api'
+import api, { mensajeError } from '../api'
 import { useAuth } from '../context/AuthContext'
 import { PlusIcon, PencilIcon, XMarkIcon, CheckIcon, UserCircleIcon } from '@heroicons/react/24/outline'
 
@@ -36,7 +36,7 @@ export default function Usuarios() {
       }
       cerrar(); cargar()
     } catch (e) {
-      mostrarToast(e.response?.data?.detail || 'Error', 'error')
+      mostrarToast(mensajeError(e), 'error')
     }
   }
 
@@ -47,7 +47,7 @@ export default function Usuarios() {
       mostrarToast('Usuario desactivado', 'ok')
       cargar()
     } catch (e) {
-      mostrarToast(e.response?.data?.detail || 'Error', 'error')
+      mostrarToast(mensajeError(e), 'error')
     }
   }
 
@@ -72,7 +72,7 @@ export default function Usuarios() {
       )
       cargar()
     } catch (e) {
-      mostrarToast(e.response?.data?.detail || 'Error', 'error')
+      mostrarToast(mensajeError(e), 'error')
     }
   }
 
@@ -86,7 +86,7 @@ export default function Usuarios() {
   return (
     <div className="flex flex-col h-full p-4 gap-4">
       {toast && (
-        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-2xl animate-fade-in ${
+        <div role="status" className={`fixed top-4 left-4 right-4 sm:left-auto z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-2xl animate-fade-in ${
           toast.tipo === 'ok' ? 'bg-green-900/90 border border-green-700/50 text-green-300' : 'bg-red-900/90 border border-red-700/50 text-red-300'
         }`}>{toast.texto}</div>
       )}
@@ -97,7 +97,7 @@ export default function Usuarios() {
           <p className="text-slate-400 text-sm">{usuarios.length} activos</p>
         </div>
         <button onClick={abrirNuevo}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all">
+          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-all">
           <PlusIcon className="w-4 h-4" /> Nuevo usuario
         </button>
       </div>
@@ -138,7 +138,7 @@ export default function Usuarios() {
                     {u.stock_habilitado ? '🔓 Stock activo' : '🔒 Stock bloqueado'}
                   </span>
                   <button onClick={() => toggleStock(u)}
-                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
                       u.stock_habilitado
                         ? 'bg-red-900/40 hover:bg-red-900/60 text-red-400'
                         : 'bg-green-900/40 hover:bg-green-900/60 text-green-400'
@@ -149,7 +149,7 @@ export default function Usuarios() {
               )}
               <div className="flex gap-2 mt-3">
                 <button onClick={() => abrirEditar(u)}
-                  className="flex-1 flex items-center justify-center gap-1.5 border border-slate-600 hover:border-slate-500 text-slate-300 hover:text-white py-1.5 rounded-lg text-xs transition-all">
+                  className="flex-1 flex items-center justify-center gap-1.5 border border-slate-600 hover:border-slate-500 text-slate-300 hover:text-white py-2.5 lg:py-1.5 rounded-lg text-xs transition-all">
                   <PencilIcon className="w-3.5 h-3.5" /> Editar
                 </button>
                 {u.id !== yo?.id && (
@@ -166,7 +166,7 @@ export default function Usuarios() {
 
       {/* Modal */}
       {modal && (
-        <div className="fixed inset-0 bg-black/70 z-40 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
           <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-sm animate-fade-in">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-lg font-bold text-white">

@@ -1,17 +1,19 @@
 import { useState, useEffect } from 'react'
-import api from '../api'
+import api, { mensajeError } from '../api'
+import { useAuth } from '../context/AuthContext'
+import CierresCaja from '../components/CierresCaja'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   LineChart, Line, CartesianGrid, PieChart, Pie, Cell
 } from 'recharts'
 import {
-  CalendarIcon, BanknotesIcon, ChartBarIcon, BellAlertIcon,
+  CalendarIcon, ClipboardDocumentCheckIcon, BanknotesIcon, ChartBarIcon, BellAlertIcon,
   UsersIcon, CubeIcon, ArrowTrendingUpIcon, ClockIcon,
   ExclamationTriangleIcon, PlusIcon, CheckIcon,
   ChevronDownIcon, ChevronUpIcon
 } from '@heroicons/react/24/outline'
 
-const TAB = { HOY: 'hoy', SEMANA: 'semana', EMPLEADOS: 'empleados', STOCK: 'stock', ALERTAS: 'alertas' }
+const TAB = { HOY: 'hoy', CIERRES: 'cierres', SEMANA: 'semana', EMPLEADOS: 'empleados', STOCK: 'stock', ALERTAS: 'alertas' }
 
 const TOOLTIP = {
   contentStyle: { background: '#1e293b', border: '1px solid #334155', borderRadius: 8, fontSize: 12 },
@@ -23,8 +25,9 @@ const LABEL_MEDIO = { efectivo: 'Efectivo', tarjeta: 'Tarjeta', mercadopago: 'Me
 const COLOR_MEDIO = { efectivo: '#22c55e', tarjeta: '#3b82f6', mercadopago: '#06b6d4' }
 
 export default function Reportes() {
+  const { user } = useAuth()
   const [tab, setTab]     = useState(TAB.HOY)
-  const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0])
+  const [fecha, setFecha] = useState(() => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }))
   const [loading, setLoading] = useState(false)
 
   const [reporteHoy, setReporteHoy] = useState(null)
@@ -120,19 +123,20 @@ export default function Reportes() {
     catch {} finally { setLoading(false) }
   }
 
+  // Suma unidades al stock actual (ingreso de mercadería). No reemplaza el valor: una venta hecha
+  // desde otro dispositivo mientras tanto no se pierde.
   const ajustarStock = async () => {
-    if (!nuevoStock) return
+    const cantidad = parseInt(nuevoStock)
+    if (!cantidad || cantidad < 1) { toast('Ingresá una cantidad mayor a 0', 'error'); return }
     try {
-      await api.post(`/productos/ajuste-stock/${modalStock.id}`, {
-        stock_nuevo: parseInt(nuevoStock),
-        motivo: motivoStock || 'ajuste manual desde panel dueño',
-        usuario_id: 1
+      const r = await api.post(`/productos/${modalStock.id}/ingreso`, {
+        cantidad, nota: motivoStock, usuario_id: user.id
       })
-      toast('Stock actualizado', 'ok')
+      toast(`✓ ${modalStock.nombre}: +${cantidad} → stock ${r.data.stock_nuevo}`, 'ok')
       setModalStock(null); setNuevoStock(''); setMotivoStock('')
       cargarStock()
     } catch (e) {
-      toast(e.response?.data?.detail || 'Error', 'error')
+      toast(mensajeError(e, 'No se pudo registrar el ingreso'), 'error')
     }
   }
 
@@ -167,16 +171,17 @@ export default function Reportes() {
   return (
     <div className="flex flex-col h-full">
       {toastMsg && (
-        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-2xl animate-fade-in ${
+        <div role="status" className={`fixed top-4 left-4 right-4 sm:left-auto z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-2xl animate-fade-in ${
           toastMsg.tipo === 'ok' ? 'bg-green-900/90 border border-green-700/50 text-green-300' : 'bg-red-900/90 border border-red-700/50 text-red-300'
         }`}>{toastMsg.texto}</div>
       )}
 
       <div className="px-5 pt-5 pb-3 border-b border-slate-700/50">
         <h1 className="text-xl font-bold text-white mb-3">Panel del dueño</h1>
-        <div className="flex gap-1 bg-slate-800/50 rounded-xl p-1 w-fit overflow-x-auto">
+        <div className="flex gap-1 bg-slate-800/50 rounded-xl p-1 w-fit max-w-full overflow-x-auto">
           {[
             { id: TAB.HOY,       label: 'Hoy',        Icon: CalendarIcon },
+            { id: TAB.CIERRES,   label: 'Cierres',    Icon: ClipboardDocumentCheckIcon },
             { id: TAB.SEMANA,    label: 'Semana',      Icon: ChartBarIcon },
             { id: TAB.EMPLEADOS, label: 'Empleados',   Icon: UsersIcon },
             { id: TAB.STOCK,     label: 'Stock',       Icon: CubeIcon },
@@ -192,7 +197,7 @@ export default function Reportes() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-5">
+      <div className="flex-1 overflow-auto p-4 sm:p-5">
         {loading && <div className="text-slate-500 text-sm animate-pulse-soft mb-4">Cargando...</div>}
 
         {/* HOY */}
@@ -214,14 +219,17 @@ export default function Reportes() {
                     </div>
                     <div className="flex gap-2">
                       <button onClick={async () => {
-                        await api.post(`/solicitudes/stock/${s.id}/aprobar`, { aprobado_por: 1 })
+                        try {
+                          await api.post(`/solicitudes/stock/${s.id}/aprobar`, { aprobado_por: user.id })
+                          toast('Acceso aprobado', 'ok')
+                        } catch (e) { toast(mensajeError(e, 'No se pudo aprobar'), 'error') }
                         cargarSolicitudes()
-                        toast('Acceso aprobado', 'ok')
                       }} className="bg-green-700 hover:bg-green-600 text-white text-xs px-3 py-1.5 rounded-lg transition-all font-medium">
                         Aprobar
                       </button>
                       <button onClick={async () => {
-                        await api.post(`/solicitudes/stock/${s.id}/rechazar`, {})
+                        try { await api.post(`/solicitudes/stock/${s.id}/rechazar`, {}) }
+                        catch (e) { toast(mensajeError(e, 'No se pudo rechazar'), 'error') }
                         cargarSolicitudes()
                       }} className="bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs px-3 py-1.5 rounded-lg transition-all">
                         Rechazar
@@ -318,22 +326,25 @@ export default function Reportes() {
           </div>
         )}
 
+        {/* CIERRES DE CAJA (por fecha y turno) */}
+        {tab === TAB.CIERRES && <CierresCaja />}
+
         {/* SEMANA */}
         {tab === TAB.SEMANA && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-gradient-to-br from-indigo-900/40 to-indigo-800/20 border border-indigo-700/30 rounded-2xl p-5">
                 <p className="text-xs text-indigo-400 font-medium mb-1">Proyección ventas del mes</p>
-                <p className="text-3xl font-bold text-white">${proyMes.toFixed(0)}</p>
+                <p className="text-2xl sm:text-3xl font-bold text-white">${proyMes.toFixed(0)}</p>
                 <p className="text-xs text-slate-500 mt-1">Basado en los últimos 7 días</p>
               </div>
               <div className="bg-gradient-to-br from-green-900/40 to-green-800/20 border border-green-700/30 rounded-2xl p-5">
                 <p className="text-xs text-green-400 font-medium mb-1">Proyección ganancia del mes</p>
-                <p className="text-3xl font-bold text-white">${proyGanMes.toFixed(0)}</p>
+                <p className="text-2xl sm:text-3xl font-bold text-white">${proyGanMes.toFixed(0)}</p>
                 <p className="text-xs text-slate-500 mt-1">Ganancia neta estimada</p>
               </div>
             </div>
-            <div className="grid grid-cols-7 gap-2">
+            <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
               {semana.map(d => (
                 <div key={d.fecha} className="bg-slate-800/50 border border-slate-700/40 rounded-xl p-3 text-center">
                   <p className="text-xs text-slate-500">{DIAS_ES[d.dia] || d.dia}</p>
@@ -516,9 +527,9 @@ export default function Reportes() {
                         <p className="text-xs text-white font-medium">{p.nombre}</p>
                         <p className="text-xs text-amber-600">Stock: {p.stock} / mín: {p.stock_minimo}</p>
                       </div>
-                      <button onClick={() => { setModalStock(p); setNuevoStock(String(p.stock_minimo * 2)) }}
+                      <button onClick={() => { setModalStock(p); setNuevoStock(String(Math.max(p.stock_minimo * 2 - p.stock, 1))) }}
                         className="bg-amber-600 hover:bg-amber-500 text-white text-xs px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1">
-                        <PlusIcon className="w-3 h-3" /> Sumar
+                        <PlusIcon className="w-3 h-3" /> Ingresar
                       </button>
                     </div>
                   ))}
@@ -534,9 +545,9 @@ export default function Reportes() {
                   <thead>
                     <tr className="text-slate-500 border-b border-slate-700/40">
                       <th className="text-left px-4 py-2">Producto</th>
-                      <th className="text-right px-3 py-2">Costo</th>
+                      <th className="text-right px-3 py-2 hidden sm:table-cell">Costo</th>
                       <th className="text-right px-3 py-2">Venta</th>
-                      <th className="text-right px-3 py-2">Ganancia</th>
+                      <th className="text-right px-3 py-2 hidden sm:table-cell">Ganancia</th>
                       <th className="text-right px-3 py-2">Stock</th>
                       <th className="px-3 py-2"></th>
                     </tr>
@@ -548,16 +559,16 @@ export default function Reportes() {
                           <p className="text-white font-medium">{p.nombre}</p>
                           <p className="text-slate-600 font-mono">{p.codigo_barra}</p>
                         </td>
-                        <td className="px-3 py-2.5 text-right text-slate-400">${p.precio_costo.toFixed(2)}</td>
+                        <td className="px-3 py-2.5 text-right text-slate-400 hidden sm:table-cell">${p.precio_costo.toFixed(2)}</td>
                         <td className="px-3 py-2.5 text-right text-white">${p.precio_venta.toFixed(2)}</td>
-                        <td className="px-3 py-2.5 text-right text-green-400 font-medium">+{p.ganancia_pct}%</td>
+                        <td className="px-3 py-2.5 text-right text-green-400 font-medium hidden sm:table-cell">+{p.ganancia_pct}%</td>
                         <td className="px-3 py-2.5 text-right">
                           <span className={`font-bold font-mono ${p.stock_bajo ? 'text-amber-400' : 'text-white'}`}>{p.stock}</span>
                           {p.stock_bajo && <ExclamationTriangleIcon className="w-3 h-3 text-amber-400 inline ml-1" />}
                         </td>
                         <td className="px-3 py-2.5">
                           <button onClick={() => { setModalStock(p); setNuevoStock('') }}
-                            className="text-slate-400 hover:text-indigo-400 transition-colors p-1 rounded-lg hover:bg-indigo-900/20">
+                            className="text-slate-400 hover:text-indigo-400 transition-colors p-2 rounded-lg hover:bg-indigo-900/20" aria-label={`Ingresar mercadería de ${p.nombre}`}>
                             <PlusIcon className="w-4 h-4" />
                           </button>
                         </td>
@@ -684,20 +695,26 @@ export default function Reportes() {
 
       {/* Modal ajuste stock */}
       {modalStock && (
-        <div className="fixed inset-0 bg-black/70 z-40 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
           <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-sm animate-fade-in">
-            <h3 className="text-lg font-bold text-white mb-1">Ajustar stock</h3>
+            <h3 className="text-lg font-bold text-white mb-1">Ingresar mercadería</h3>
             <p className="text-slate-400 text-sm mb-4">{modalStock.nombre}</p>
             <div className="bg-slate-700/40 rounded-lg px-3 py-2 mb-4 text-sm flex justify-between">
               <span className="text-slate-400">Stock actual</span>
               <span className="text-white font-bold">{modalStock.stock} unidades</span>
             </div>
-            <label className="block text-xs text-slate-400 mb-1.5">Nuevo stock total</label>
-            <input type="number" className="w-full mb-3" value={nuevoStock}
+            <label className="block text-xs text-slate-400 mb-1.5">Unidades que entraron</label>
+            <input type="number" inputMode="numeric" min="1" className="w-full mb-3" value={nuevoStock}
               onChange={e => setNuevoStock(e.target.value)} placeholder="Ej: 24" autoFocus />
-            <label className="block text-xs text-slate-400 mb-1.5">Motivo (opcional)</label>
+            {parseInt(nuevoStock) > 0 && (
+              <div className="bg-green-900/20 border border-green-800/30 rounded-lg px-3 py-2 mb-3 text-sm flex justify-between">
+                <span className="text-green-300">Stock después</span>
+                <span className="text-green-400 font-bold">{modalStock.stock + parseInt(nuevoStock)} unidades</span>
+              </div>
+            )}
+            <label className="block text-xs text-slate-400 mb-1.5">Nota (opcional)</label>
             <input className="w-full mb-4" value={motivoStock}
-              onChange={e => setMotivoStock(e.target.value)} placeholder="Ej: reposición semanal" />
+              onChange={e => setMotivoStock(e.target.value)} placeholder="Ej: remito 1234, proveedor" />
             <div className="flex gap-3">
               <button onClick={() => { setModalStock(null); setNuevoStock(''); setMotivoStock('') }}
                 className="flex-1 border border-slate-600 text-slate-300 py-2.5 rounded-xl text-sm transition-all">
@@ -705,7 +722,7 @@ export default function Reportes() {
               </button>
               <button onClick={ajustarStock}
                 className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 rounded-xl text-sm transition-all flex items-center justify-center gap-2">
-                <CheckIcon className="w-4 h-4" /> Guardar
+                <CheckIcon className="w-4 h-4" /> Registrar ingreso
               </button>
             </div>
           </div>

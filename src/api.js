@@ -10,8 +10,23 @@ api.interceptors.request.use(config => {
   return config
 })
 
+// Cache del service worker (ver vite.config.js). Tras cualquier escritura se descarta para que
+// la próxima lectura de productos/turnos/ventas venga siempre fresca del servidor.
+const SW_API_CACHE = 'api-cache'
+
+export async function invalidarCacheApi() {
+  try {
+    if ('caches' in window) await caches.delete(SW_API_CACHE)
+  } catch { /* sin Cache API: nada que invalidar */ }
+}
+
+const ES_ESCRITURA = m => ['post', 'put', 'patch', 'delete'].includes((m || '').toLowerCase())
+
 api.interceptors.response.use(
-  res => res,
+  res => {
+    if (ES_ESCRITURA(res.config?.method)) invalidarCacheApi()
+    return res
+  },
   err => {
     if (err.response?.status === 401) {
       localStorage.removeItem('token')
@@ -53,6 +68,15 @@ export async function sincronizarCola() {
 
 export function contarPendientes() {
   return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]').length
+}
+
+/** Mensaje legible para mostrar al usuario a partir de un error de axios. */
+export function mensajeError(e, porDefecto = 'Error inesperado') {
+  const detail = e?.response?.data?.detail
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail) && detail[0]?.msg) return detail[0].msg   // errores 422 de FastAPI
+  if (!e?.response) return 'Sin conexión con el servidor. No se guardó nada, reintentá.'
+  return porDefecto
 }
 
 // ── Keep-alive ─────────────────────────────────────────────
