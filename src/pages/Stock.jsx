@@ -27,6 +27,7 @@ export default function Stock() {
   const [principalFusion, setPrincipalFusion] = useState(null)
   const [guardando, setGuardando] = useState(false)
   const [ingreso, setIngreso]     = useState(null)   // { producto, cantidad, nota }
+  const [ajuste, setAjuste]       = useState(null)   // { producto, valor, motivo }
   const fileRef = useRef()
   const toastTimer = useRef()
 
@@ -237,18 +238,28 @@ export default function Stock() {
     }
   }
 
-  const ajustarStock = async (p) => {
-    const nuevo = prompt(`Stock actual: ${p.stock}\nNuevo stock para "${p.nombre}":`)
-    if (nuevo === null || isNaN(parseInt(nuevo))) return
-    const motivo = prompt('Motivo del ajuste:') || 'ajuste manual'
+  const abrirAjuste = (p) => setAjuste({ producto: p, valor: String(p.stock), motivo: '' })
+
+  const confirmarAjuste = async () => {
+    const valor = parseInt(ajuste?.valor)
+    if (isNaN(valor) || valor < 0) {
+      mostrarToast('Ingresá un stock válido (0 o más)', 'error'); return
+    }
+    if (guardando) return
+    setGuardando(true)
     try {
-      const res = await api.post(`/productos/ajuste-stock/${p.id}`, {
-        stock_nuevo: parseInt(nuevo), motivo, usuario_id: user.id
+      const res = await api.post(`/productos/ajuste-stock/${ajuste.producto.id}`, {
+        stock_nuevo: valor, motivo: ajuste.motivo, usuario_id: user.id
       })
       aplicarProductoGuardado(res.data.producto)
-      mostrarToast(`✓ ${p.nombre}: stock ${res.data.stock_anterior} → ${res.data.producto.stock}`, 'ok')
+      mostrarToast(`✓ ${ajuste.producto.nombre}: stock ${res.data.stock_anterior} → ${res.data.producto.stock}`, 'ok')
+      setAjuste(null)
       cargar()
-    } catch (e) { mostrarToast(mensajeError(e, 'No se pudo ajustar el stock'), 'error') }
+    } catch (e) {
+      mostrarToast(mensajeError(e, 'No se pudo ajustar el stock'), 'error')
+    } finally {
+      setGuardando(false)
+    }
   }
 
   const importarExcel = async (e) => {
@@ -432,9 +443,9 @@ export default function Stock() {
                           title="Editar producto">
                           <PencilIcon className="w-3.5 h-3.5" />
                         </button>
-                        <button onClick={() => ajustarStock(p)}
+                        <button onClick={() => abrirAjuste(p)}
                           className="p-2 md:p-1.5 min-w-[2rem] rounded-lg hover:bg-indigo-900/50 text-slate-400 hover:text-indigo-400 transition-all text-xs font-bold"
-                          title="Corregir stock (reemplaza el valor)">
+                          title="Corregir stock a partir de un conteo físico" aria-label={`Corregir stock de ${p.nombre}`}>
                           ±
                         </button>
                         {esDueno && (
@@ -615,6 +626,53 @@ export default function Stock() {
               <button onClick={confirmarIngreso} disabled={guardando}
                 className="flex-1 bg-green-600 hover:bg-green-500 text-white font-semibold py-2.5 rounded-xl text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
                 <CheckIcon className="w-4 h-4" /> {guardando ? 'Guardando...' : 'Registrar ingreso'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL AJUSTE DE STOCK (conteo físico) ── */}
+      {puedeEditar && ajuste && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-sm animate-fade-in">
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-lg font-bold text-white">Corregir stock</h3>
+              <button onClick={() => setAjuste(null)} className="text-slate-400 hover:text-white" aria-label="Cerrar">
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-slate-300 text-sm">{ajuste.producto.nombre}</p>
+            <div className="bg-slate-700/40 rounded-lg px-3 py-2 my-4 text-sm flex justify-between">
+              <span className="text-slate-400">Stock actual (sistema)</span>
+              <span className="text-white font-bold">{ajuste.producto.stock} u.</span>
+            </div>
+            <label className="block text-xs text-slate-400 mb-1.5">Stock real contado</label>
+            <input type="number" inputMode="numeric" min="0" className="w-full mb-3" autoFocus
+              value={ajuste.valor} placeholder="Ej: 18"
+              onChange={e => setAjuste({ ...ajuste, valor: e.target.value })}
+              onKeyDown={e => e.key === 'Enter' && confirmarAjuste()} />
+            <label className="block text-xs text-slate-400 mb-1.5">Motivo (opcional)</label>
+            <input className="w-full mb-3" value={ajuste.motivo} placeholder="Ej: conteo mensual, rotura, robo"
+              onChange={e => setAjuste({ ...ajuste, motivo: e.target.value })} />
+            {ajuste.valor !== '' && !isNaN(parseInt(ajuste.valor)) && parseInt(ajuste.valor) !== ajuste.producto.stock && (
+              <div className={`rounded-lg px-3 py-2 mb-4 text-sm flex justify-between ${
+                parseInt(ajuste.valor) > ajuste.producto.stock ? 'bg-green-900/20 border border-green-800/30' : 'bg-amber-900/20 border border-amber-800/30'
+              }`}>
+                <span className={parseInt(ajuste.valor) > ajuste.producto.stock ? 'text-green-300' : 'text-amber-300'}>
+                  {parseInt(ajuste.valor) > ajuste.producto.stock ? 'Suma' : 'Resta'} al stock actual
+                </span>
+                <span className={`font-bold ${parseInt(ajuste.valor) > ajuste.producto.stock ? 'text-green-400' : 'text-amber-400'}`}>
+                  {parseInt(ajuste.valor) > ajuste.producto.stock ? '+' : ''}{parseInt(ajuste.valor) - ajuste.producto.stock} u.
+                </span>
+              </div>
+            )}
+            <div className="flex gap-3">
+              <button onClick={() => setAjuste(null)}
+                className="flex-1 border border-slate-600 text-slate-300 py-2.5 rounded-xl text-sm transition-all">Cancelar</button>
+              <button onClick={confirmarAjuste} disabled={guardando}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 rounded-xl text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
+                <CheckIcon className="w-4 h-4" /> {guardando ? 'Guardando...' : 'Guardar ajuste'}
               </button>
             </div>
           </div>

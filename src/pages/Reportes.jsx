@@ -46,6 +46,7 @@ export default function Reportes() {
   const [modalStock, setModalStock] = useState(null)
   const [nuevoStock, setNuevoStock] = useState('')
   const [motivoStock, setMotivoStock] = useState('')
+  const [guardandoStock, setGuardandoStock] = useState(false)
   const [toastMsg, setToastMsg]     = useState(null)
   const [turnoExpandido, setTurnoExpandido] = useState(null)
 
@@ -128,6 +129,8 @@ export default function Reportes() {
   const ajustarStock = async () => {
     const cantidad = parseInt(nuevoStock)
     if (!cantidad || cantidad < 1) { toast('Ingresá una cantidad mayor a 0', 'error'); return }
+    if (guardandoStock) return
+    setGuardandoStock(true)
     try {
       const r = await api.post(`/productos/${modalStock.id}/ingreso`, {
         cantidad, nota: motivoStock, usuario_id: user.id
@@ -137,6 +140,8 @@ export default function Reportes() {
       cargarStock()
     } catch (e) {
       toast(mensajeError(e, 'No se pudo registrar el ingreso'), 'error')
+    } finally {
+      setGuardandoStock(false)
     }
   }
 
@@ -716,13 +721,13 @@ export default function Reportes() {
             <input className="w-full mb-4" value={motivoStock}
               onChange={e => setMotivoStock(e.target.value)} placeholder="Ej: remito 1234, proveedor" />
             <div className="flex gap-3">
-              <button onClick={() => { setModalStock(null); setNuevoStock(''); setMotivoStock('') }}
-                className="flex-1 border border-slate-600 text-slate-300 py-2.5 rounded-xl text-sm transition-all">
+              <button onClick={() => { setModalStock(null); setNuevoStock(''); setMotivoStock('') }} disabled={guardandoStock}
+                className="flex-1 border border-slate-600 text-slate-300 py-2.5 rounded-xl text-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed">
                 Cancelar
               </button>
-              <button onClick={ajustarStock}
-                className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 rounded-xl text-sm transition-all flex items-center justify-center gap-2">
-                <CheckIcon className="w-4 h-4" /> Registrar ingreso
+              <button onClick={ajustarStock} disabled={guardandoStock}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 rounded-xl text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
+                <CheckIcon className="w-4 h-4" /> {guardandoStock ? 'Guardando...' : 'Registrar ingreso'}
               </button>
             </div>
           </div>
