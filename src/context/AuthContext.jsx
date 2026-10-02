@@ -42,7 +42,9 @@ export function AuthProvider({ children }) {
 
   const login = async (username, password) => {
     const form = new FormData()
-    form.append('username', username)
+    // El servidor ya compara sin mayúsculas/espacios, pero se recorta también acá por si algo
+    // más (un script, un login automatizado) llama a esta función directamente.
+    form.append('username', (username || '').trim())
     form.append('password', password)
     const res = await api.post('/login', form)
     localStorage.setItem('token', res.data.access_token)

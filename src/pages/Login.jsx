@@ -20,7 +20,7 @@ export default function Login() {
   }, [])
 
   const attemptLogin = async () => {
-    if (!form.username || !form.password) { setError('Completá usuario y contraseña'); return }
+    if (!form.username.trim() || !form.password) { setError('Completá usuario y contraseña'); return }
     setLoading(true)
     setError('')
     setIsNetworkError(false)
@@ -205,6 +205,9 @@ export default function Login() {
                 placeholder="tu_usuario"
                 value={form.username}
                 autoComplete="username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 onChange={e => setForm({ ...form, username: e.target.value })}
                 autoFocus
                 style={{

@@ -183,7 +183,9 @@ export default function Usuarios() {
               </div>
               <div>
                 <label className="block text-xs text-slate-400 mb-1.5">Usuario (para login)</label>
-                <input className="w-full" value={form.username} onChange={e => setForm({...form, username: e.target.value})} />
+                <input className="w-full" value={form.username} autoCapitalize="none" autoCorrect="off" spellCheck={false}
+                  onChange={e => setForm({...form, username: e.target.value})} />
+                <p className="text-slate-600 text-xs mt-1">Sin mayúsculas ni espacios — se guarda todo en minúscula.</p>
               </div>
               <div>
                 <label className="block text-xs text-slate-400 mb-1.5">
