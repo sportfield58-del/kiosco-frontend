@@ -3,6 +3,7 @@ import api, { encolarOffline } from '../api'
 import { useAuth } from '../context/AuthContext'
 import { useOffline } from '../hooks/useOffline'
 import { useRefrescoAutomatico } from '../hooks/useRefrescoAutomatico'
+import { useRecargoNocturno } from '../hooks/useRecargoNocturno'
 import {
   TrashIcon, BanknotesIcon, CreditCardIcon,
   ArrowPathIcon, CheckCircleIcon, ExclamationCircleIcon,
@@ -37,7 +38,7 @@ export default function Caja() {
   const [modalCierre, setModalCierre] = useState(false)
   const [montoCierre, setMontoCierre] = useState('')
   const [resumenCierre, setResumenCierre] = useState(null)
-  const [recargoNocturno, setRecargoNocturno] = useState(false)
+  const recargoNocturno = useRecargoNocturno()
   const [verDetalleVentas, setVerDetalleVentas] = useState(false)
   const [verResumenProductos, setVerResumenProductos] = useState(true)
   // Consumos
@@ -49,25 +50,11 @@ export default function Caja() {
 
   const esDueno = ['admin','dueño'].includes(user?.rol)
 
-  useEffect(() => { cargarTurno(); cargarProductos(); verificarRecargoNocturno() }, [])
+  useEffect(() => { cargarTurno(); cargarProductos() }, [])
 
   // Stock y turno pueden cambiar desde otro dispositivo (ingreso de mercadería, cierre desde el celular):
   // se releen cada minuto y apenas se vuelve a la app, sin depender de la caché.
   useRefrescoAutomatico(() => { cargarProductos(); if (!resumenCierre) cargarTurno() }, { activo: !offline })
-  useEffect(() => {
-    const intervalo = setInterval(verificarRecargoNocturno, 5 * 60 * 1000)
-    return () => clearInterval(intervalo)
-  }, [])
-
-  const verificarRecargoNocturno = async () => {
-    try {
-      const res = await api.get('/ventas/recargo-nocturno')
-      setRecargoNocturno(res.data.activo)
-    } catch {
-      const hora = new Date().getHours()
-      setRecargoNocturno(hora >= 22 || hora < 6)
-    }
-  }
 
   const cargarProductos = async () => {
     try {
@@ -206,7 +193,15 @@ export default function Caja() {
         mostrarToast(`Venta guardada offline — $${totalConRecargo.toFixed(2)}`, 'ok')
       } else {
         const res = await api.post('/ventas', payload)
-        if (res.data.recargo_nocturno) mostrarToast(`Cobrado $${totalConRecargo.toFixed(2)} (+10% nocturno)`, 'ok')
+        if (Math.abs(res.data.total - totalConRecargo) > 1) {
+          // El servidor decide el recargo nocturno con su hora. Si justo cambió la franja (22:00 / 06:00)
+          // entre que se armó el carrito y se cobró, el total registrado difiere del mostrado: avisarlo
+          // para cobrar/devolver la diferencia en el momento y que la caja cierre.
+          mostrarToast(`⚠ El sistema registró $${res.data.total.toFixed(2)}` +
+            `${res.data.recargo_nocturno ? ' (con recargo nocturno)' : ' (sin recargo nocturno)'} — ` +
+            `${res.data.total > totalConRecargo ? 'cobrá' : 'devolvé'} $${Math.abs(res.data.total - totalConRecargo).toFixed(2)} de diferencia`, 'warn')
+        }
+        else if (res.data.recargo_nocturno) mostrarToast(`Cobrado $${totalConRecargo.toFixed(2)} (+10% nocturno)`, 'ok')
         else if (medio === 'mixto') mostrarToast(`Cobrado: $${montoEfNum} efectivo + $${montoMPNum} MP`, 'ok')
         else if (medio === 'efectivo' && vuelto > 0) mostrarToast(`Vuelto: $${vuelto.toFixed(2)}`, 'ok')
         else mostrarToast(`Cobrado $${totalConRecargo.toFixed(2)} en ${labelMedio(medio)}`, 'ok')
