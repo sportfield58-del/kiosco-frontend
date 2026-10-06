@@ -6,8 +6,19 @@ import {
   ArrowUpTrayIcon, PlusIcon, MagnifyingGlassIcon,
   ExclamationTriangleIcon, PencilIcon, CheckIcon, XMarkIcon,
   LockClosedIcon, ChevronDownIcon, ChevronUpIcon, TrashIcon,
-  Square2StackIcon, PlusCircleIcon
+  Square2StackIcon, PlusCircleIcon, ClockIcon
 } from '@heroicons/react/24/outline'
+
+const TIPO_MOV = {
+  VENTA:            { label: 'Venta',              color: 'text-slate-300' },
+  INGRESO_MANUAL:   { label: 'Carga de mercadería', color: 'text-green-400' },
+  AJUSTE_POSITIVO:  { label: 'Corrección (+)',     color: 'text-green-400' },
+  AJUSTE_NEGATIVO:  { label: 'Corrección (−)',     color: 'text-amber-400' },
+  ANULACION_VENTA:  { label: 'Venta anulada',      color: 'text-sky-400' },
+  CONSUMO_EMPLEADO: { label: 'Consumo empleado',   color: 'text-amber-400' },
+  CONSUMO_DUENO:    { label: 'Retiro del dueño',   color: 'text-purple-400' },
+  FUSION:           { label: 'Fusión duplicados',  color: 'text-indigo-400' },
+}
 
 export default function Stock() {
   const { user }            = useAuth()
@@ -28,6 +39,7 @@ export default function Stock() {
   const [guardando, setGuardando] = useState(false)
   const [ingreso, setIngreso]     = useState(null)   // { producto, cantidad, nota }
   const [ajuste, setAjuste]       = useState(null)   // { producto, valor, motivo }
+  const [historial, setHistorial] = useState(null)   // { producto, movs: [] | null, error }
   const fileRef = useRef()
   const toastTimer = useRef()
 
@@ -181,9 +193,9 @@ export default function Stock() {
         usuario_id: user.id
       }
       if (editando) {
-        // El stock solo se envía si el usuario lo cambió a mano. Si no, el valor de la pantalla
-        // (que puede estar desactualizado por ventas en otro dispositivo) pisaría el real.
-        if (datos.stock === editando.stock) delete datos.stock
+        // Editar nunca cambia el stock (el servidor además lo ignora): reemplazar el número desde acá
+        // pisaba cargas de otras personas sin dejar rastro. Para eso están "Cargar" y "Corregir".
+        delete datos.stock
         const res = await api.put(`/productos/${editando.id}`, datos)
         aplicarProductoGuardado(res.data.producto)
         mostrarToast(`✓ "${datos.nombre}" actualizado`, 'ok')
@@ -240,10 +252,24 @@ export default function Stock() {
 
   const abrirAjuste = (p) => setAjuste({ producto: p, valor: String(p.stock), motivo: '' })
 
+  // Kardex del producto: quién cambió el stock, cuándo y por qué
+  const abrirHistorial = async (p) => {
+    setHistorial({ producto: p, movs: null, error: null })
+    try {
+      const res = await api.get(`/productos/${p.id}/movimientos`, { params: { limite: 100 } })
+      setHistorial(h => h && h.producto.id === p.id ? { ...h, movs: res.data } : h)
+    } catch (e) {
+      setHistorial(h => h && h.producto.id === p.id ? { ...h, error: mensajeError(e, 'No se pudo cargar el historial') } : h)
+    }
+  }
+
   const confirmarAjuste = async () => {
     const valor = parseInt(ajuste?.valor)
     if (isNaN(valor) || valor < 0) {
       mostrarToast('Ingresá un stock válido (0 o más)', 'error'); return
+    }
+    if (valor < ajuste.producto.stock && !ajuste.motivo.trim()) {
+      mostrarToast('Para bajar el stock indicá el motivo (conteo, rotura, vencido...)', 'error'); return
     }
     if (guardando) return
     setGuardando(true)
@@ -435,8 +461,16 @@ export default function Stock() {
                       <div className="flex gap-1 justify-end">
                         <button onClick={() => abrirIngreso(p)}
                           className="p-2 md:p-1.5 rounded-lg hover:bg-green-900/40 text-green-400 hover:text-green-300 transition-all"
-                          title="Ingresar mercadería (suma al stock)" aria-label={`Ingresar mercadería de ${p.nombre}`}>
-                          <PlusCircleIcon className="w-5 h-5 md:w-4 md:h-4" />
+                          title="Cargar mercadería (suma al stock)" aria-label={`Ingresar mercadería de ${p.nombre}`}>
+                          <span className="flex items-center gap-1">
+                            <PlusCircleIcon className="w-5 h-5 md:w-4 md:h-4" />
+                            <span className="hidden lg:inline text-xs font-semibold">Cargar</span>
+                          </span>
+                        </button>
+                        <button onClick={() => abrirHistorial(p)}
+                          className="p-2 md:p-1.5 rounded-lg hover:bg-slate-700 text-slate-400 hover:text-white transition-all"
+                          title="Historial de stock" aria-label={`Historial de stock de ${p.nombre}`}>
+                          <ClockIcon className="w-4 h-4 md:w-3.5 md:h-3.5" />
                         </button>
                         <button onClick={() => abrirEditar(p)}
                           className="p-2 md:p-1.5 rounded-lg hover:bg-slate-700 text-slate-400 hover:text-white transition-all"
@@ -558,10 +592,27 @@ export default function Stock() {
                 <label className="block text-xs text-slate-400 mb-1">Precio venta</label>
                 <input type="number" className="w-full" value={form.precio_venta} onChange={e => setForm({...form, precio_venta: e.target.value})} />
               </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">{editando ? 'Stock (reemplaza el valor)' : 'Stock inicial'}</label>
-                <input type="number" className="w-full" value={form.stock} onChange={e => setForm({...form, stock: e.target.value})} />
-              </div>
+              {editando ? (
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Stock actual</label>
+                  <div className="flex items-center gap-1.5">
+                    <span className="flex-1 bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono font-semibold">{editando.stock}</span>
+                    <button type="button" onClick={() => { const p = editando; cerrarModal(); abrirIngreso(p) }}
+                      className="px-2.5 py-2 rounded-lg bg-green-700/80 hover:bg-green-600 text-white text-xs font-semibold" title="Sumar mercadería">
+                      + Cargar
+                    </button>
+                    <button type="button" onClick={() => { const p = editando; cerrarModal(); abrirAjuste(p) }}
+                      className="px-2.5 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold" title="Corregir con un conteo">
+                      ±
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Stock inicial</label>
+                  <input type="number" inputMode="numeric" className="w-full" value={form.stock} onChange={e => setForm({...form, stock: e.target.value})} />
+                </div>
+              )}
               <div>
                 <label className="block text-xs text-slate-400 mb-1">Stock mínimo</label>
                 <input type="number" className="w-full" value={form.stock_minimo} onChange={e => setForm({...form, stock_minimo: e.target.value})} />
@@ -652,8 +703,12 @@ export default function Stock() {
               value={ajuste.valor} placeholder="Ej: 18"
               onChange={e => setAjuste({ ...ajuste, valor: e.target.value })}
               onKeyDown={e => e.key === 'Enter' && confirmarAjuste()} />
-            <label className="block text-xs text-slate-400 mb-1.5">Motivo (opcional)</label>
-            <input className="w-full mb-3" value={ajuste.motivo} placeholder="Ej: conteo mensual, rotura, robo"
+            <label className="block text-xs text-slate-400 mb-1.5">
+              Motivo {parseInt(ajuste.valor) < ajuste.producto.stock
+                ? <span className="text-amber-400">(obligatorio si baja el stock)</span>
+                : '(opcional)'}
+            </label>
+            <input className="w-full mb-3" value={ajuste.motivo} placeholder="Ej: conteo mensual, rotura, vencido"
               onChange={e => setAjuste({ ...ajuste, motivo: e.target.value })} />
             {ajuste.valor !== '' && !isNaN(parseInt(ajuste.valor)) && parseInt(ajuste.valor) !== ajuste.producto.stock && (
               <div className={`rounded-lg px-3 py-2 mb-4 text-sm flex justify-between ${
@@ -674,6 +729,55 @@ export default function Stock() {
                 className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 rounded-xl text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
                 <CheckIcon className="w-4 h-4" /> {guardando ? 'Guardando...' : 'Guardar ajuste'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL HISTORIAL DE STOCK (Kardex) ── */}
+      {historial && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => setHistorial(null)}>
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5 w-full max-w-lg max-h-[85vh] flex flex-col animate-fade-in"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-lg font-bold text-white">Historial de stock</h3>
+              <button onClick={() => setHistorial(null)} className="text-slate-400 hover:text-white" aria-label="Cerrar">
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-slate-300 text-sm mb-3">
+              {historial.producto.nombre} · stock actual <span className="font-bold text-white">{historial.producto.stock}</span>
+            </p>
+            <div className="flex-1 overflow-auto -mx-1 px-1">
+              {historial.error && <p className="text-red-300 text-sm py-6 text-center">{historial.error}</p>}
+              {!historial.error && historial.movs === null && (
+                <p className="text-slate-500 text-sm py-6 text-center animate-pulse-soft">Cargando...</p>
+              )}
+              {historial.movs?.length === 0 && (
+                <p className="text-slate-500 text-sm py-6 text-center">Sin movimientos registrados todavía.</p>
+              )}
+              <ul className="divide-y divide-slate-700/40">
+                {historial.movs?.map(m => {
+                  const t = TIPO_MOV[m.tipo_movimiento] || { label: m.tipo_movimiento, color: 'text-slate-300' }
+                  return (
+                    <li key={m.id} className="py-2.5 flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className={`text-sm font-medium ${t.color}`}>{t.label}</p>
+                        <p className="text-xs text-slate-400">
+                          {m.usuario} · {new Date(m.fecha).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}
+                        </p>
+                        {m.nota && <p className="text-xs text-slate-500 truncate">“{m.nota}”</p>}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className={`font-mono font-bold ${m.cantidad >= 0 ? 'text-green-400' : 'text-amber-400'}`}>
+                          {m.cantidad >= 0 ? '+' : ''}{m.cantidad}
+                        </p>
+                        <p className="text-xs text-slate-500 font-mono">{m.stock_anterior} → {m.stock_nuevo}</p>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
             </div>
           </div>
         </div>
