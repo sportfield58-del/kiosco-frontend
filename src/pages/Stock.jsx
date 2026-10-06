@@ -477,18 +477,18 @@ export default function Stock() {
                           title="Editar producto">
                           <PencilIcon className="w-3.5 h-3.5" />
                         </button>
+                        {esDueno && (
+                          <button onClick={() => eliminarProducto(p)}
+                            className="p-2 md:p-1.5 rounded-lg hover:bg-red-900/50 text-red-400/80 hover:text-red-400 transition-all"
+                            title="Eliminar producto" aria-label={`Eliminar ${p.nombre}`}>
+                            <TrashIcon className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         <button onClick={() => abrirAjuste(p)}
                           className="p-2 md:p-1.5 min-w-[2rem] rounded-lg hover:bg-indigo-900/50 text-slate-400 hover:text-indigo-400 transition-all text-xs font-bold"
                           title="Corregir stock a partir de un conteo físico" aria-label={`Corregir stock de ${p.nombre}`}>
                           ±
                         </button>
-                        {esDueno && (
-                          <button onClick={() => eliminarProducto(p)}
-                            className="p-2 md:p-1.5 rounded-lg hover:bg-red-900/50 text-slate-400 hover:text-red-400 transition-all"
-                            title="Eliminar producto">
-                            <TrashIcon className="w-3.5 h-3.5" />
-                          </button>
-                        )}
                       </div>
                     </td>
                   )}
