@@ -477,7 +477,7 @@ export default function Stock() {
                           title="Editar producto">
                           <PencilIcon className="w-3.5 h-3.5" />
                         </button>
-                        {esDueno && (
+                        {puedeEditar && (
                           <button onClick={() => eliminarProducto(p)}
                             className="p-2 md:p-1.5 rounded-lg hover:bg-red-900/50 text-red-400/80 hover:text-red-400 transition-all"
                             title="Eliminar producto" aria-label={`Eliminar ${p.nombre}`}>
