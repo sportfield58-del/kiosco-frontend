@@ -185,8 +185,8 @@ export default function Reportes() {
         <h1 className="text-xl font-bold text-white mb-3">Panel del dueño</h1>
         <div className="flex gap-1 bg-slate-800/50 rounded-xl p-1 w-fit max-w-full overflow-x-auto">
           {[
+            { id: TAB.CIERRES,   label: 'Turnos',     Icon: ClipboardDocumentCheckIcon },
             { id: TAB.HOY,       label: 'Hoy',        Icon: CalendarIcon },
-            { id: TAB.CIERRES,   label: 'Cierres',    Icon: ClipboardDocumentCheckIcon },
             { id: TAB.SEMANA,    label: 'Semana',      Icon: ChartBarIcon },
             { id: TAB.EMPLEADOS, label: 'Empleados',   Icon: UsersIcon },
             { id: TAB.STOCK,     label: 'Stock',       Icon: CubeIcon },
